@@ -9,8 +9,11 @@ ARG UI_COMMIT
 ARG UI_BUILD_TIME
 WORKDIR /ui
 COPY data/react-ui/ ./
-# Include fallback build metadata referenced by the UI build.
-COPY data/html ./html
+# Include fallback build metadata referenced by the UI build.  The React
+# source imports this file via a relative path that traverses up to the
+# repository root, so we mirror that structure inside the build container by
+# copying the html directory to /html (a sibling of /ui).
+COPY data/html /html
 RUN npm ci
 RUN npm run build
 
