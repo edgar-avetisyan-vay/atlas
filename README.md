@@ -1,73 +1,39 @@
+# 🌐 Atlas - Network Infrastructure Visualizer
 
-# 🌐 Atlas - Network Infrastructure Visualizer (Go-powered)
-
-**Atlas** is a full-stack containerized tool to **scan**, **analyze**, and **visualize** network infrastructure dynamically. Built with Go, FastAPI, NGINX, and a custom React frontend, it provides automated scanning, storage, and rich dashboards for insight into your infrastructure.
-
----
-### Live Demo 🔗 [atlasdemo.vnerd.nl](https://atlasdemo.vnerd.nl/)
+Atlas is a containerized stack (Go scanner + FastAPI API + NGINX + React UI) that discovers the hosts that live on or near the Docker host it runs on and renders the results in an interactive dashboard. Everything you need to build, run, or redeploy the tool is in this repository.
 
 ---
-## 🚀 What It Does
-
-Atlas performs three key functions:
-
-1. **Scans Docker Containers** running on the host to extract:
-   - IP addresses **(supports multiple IPs per container)**
-   - MAC addresses **(supports multiple MACs per container)**
-   - Open ports
-   - Network names
-   - OS type (from image metadata)
-   - **Each network interface is tracked separately**
-
-2. **Scans Local & Neighboring Hosts** on the subnet to:
-   - Detect reachable devices
-   - Retrieve OS fingerprints, MACs, and open ports
-   - Populate a full map of the infrastructure
-
-3. **Visualizes Data in Real-Time**:
-   - Serves an interactive HTML dashboard via Nginx
-   - Hosts a FastAPI backend for data access and control
-   - Uses a React frontend to render dynamic network graphs
+## ✨ Highlights
+- **Docker & host scanners** collect IPs, MACs, open ports, network names, and per-interface metadata for containers and LAN devices.
+- **FastAPI backend** exposes the collected data (`/api/*`) and accepts pushes from remote agents.
+- **React UI** (served through NGINX) visualizes the inventory and lets you trigger scans or adjust schedules.
+- **Single container deployment** – build once, run anywhere with a couple of environment variables.
 
 ---
-
-## 🧑‍💻 Getting Started (Local Development)
-
-Use this quick-start checklist whenever you begin working on Atlas locally:
-
-1. **Clone and enter the repo**
+## 🚀 Quick Start (build locally & run)
+1. **Clone this repo and enter it**
    ```bash
    git clone https://github.com/<your-org>/atlas.git
    cd atlas
    ```
-2. **Install frontend dependencies**
+2. **Use the helper script to build the UI, assemble the Docker image, and run it on your machine.** The script only uses the files in this repo – nothing is pulled from Docker Hub unless _you_ opt into pushing at the end.
    ```bash
-   cd data/react-ui
-   npm install
-   npm run build
-   cd ../../
+   chmod +x deploy.sh
+   ./deploy.sh
    ```
-   The production-ready assets land in `data/react-ui/dist` and are copied into the container during `docker build`.
-3. **Build the container image**
-   ```bash
-   docker build -t atlas:dev .
-   ```
-4. **Run the stack** – Start the image with the environment variables described below (or reuse the sample `docker run` command). The UI becomes available on `http://localhost:8888/` and the FastAPI docs at `http://localhost:8888/api/docs`.
+   Respond to the prompts (pick any version label you like, answer “n” when asked about tagging `latest` or pushing) and the script will:
+   - install/build the React UI,
+   - sync `data/react-ui/dist` into `data/html`,
+   - build a Docker image from the local Dockerfile, and
+   - start a container named `atlas-dev` with host networking + the required capabilities.
 
-Re-running steps 2–4 ensures you are always working from the latest frontend build and container image.
-
----
-
-## 🚀 Deployment (Docker)
-
-Run Atlas with optional port configuration:
-
+**Prefer to run the container manually?** After cloning, follow the manual build steps below to create a local image (for example `atlas:local`) and then run it yourself:
 ```bash
 docker run -d \
   --name atlas \
-  --network=host \
-  --cap-add=NET_RAW \
-  --cap-add=NET_ADMIN \
+  --network host \
+  --cap-add NET_RAW \
+  --cap-add NET_ADMIN \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -e ATLAS_UI_PORT=8884 \
   -e ATLAS_API_PORT=8885 \
@@ -75,286 +41,90 @@ docker run -d \
   -e DOCKERSCAN_INTERVAL=3600 \
   -e DEEPSCAN_INTERVAL=7200 \
   -e SCAN_SUBNETS="192.168.1.0/24,10.0.0.0/24" \
-  keinstien/atlas:latest
+  atlas:local
 ```
 
-**Environment Variables:**
-- `ATLAS_UI_PORT` – Sets the port for the Atlas UI (Nginx). Default: 8888.
-- `ATLAS_API_PORT` – Sets the port for the FastAPI backend. Default: 8889.
-- `FASTSCAN_INTERVAL` – Interval in seconds between fast scans. Default: 3600 (1 hour).
-- `DOCKERSCAN_INTERVAL` – Interval in seconds between Docker scans. Default: 3600 (1 hour).
-- `DEEPSCAN_INTERVAL` – Interval in seconds between deep scans. Default: 7200 (2 hours).
-- `SCAN_SUBNETS` – Comma-separated list of subnets to scan (e.g., "192.168.1.0/24,10.0.0.0/24"). If not set, Atlas will auto-detect the local subnet. This allows scanning multiple networks including LAN and remote servers.
+**Access**
+- UI: `http://<host-ip>:ATLAS_UI_PORT` (default 8888 – set it yourself if you prefer e.g. `8884`)
+- API: `http://<host-ip>:ATLAS_API_PORT/api/docs` (FastAPI docs are also reachable through the UI proxy: `http://<host-ip>:ATLAS_UI_PORT/api/docs`)
 
-If not set, defaults are used (UI: 8888, API: 8889, scan intervals as shown above).
-
-Example endpoints:
-- UI:                              http://localhost:ATLAS_UI_PORT
-- API(from exposed API port):      http://localhost:ATLAS_API_PORT/api/docs
-- API(based on nginx conf):        http://localhost:ATLAS_UI_PORT/api/docs
-
-**Scan Scheduling:**
-Atlas automatically runs scans at the configured intervals. You can:
-- Set initial intervals via environment variables (see above)
-- Change intervals dynamically through the Scripts Panel in the UI
-- Manually trigger scans via the UI or API at any time
-
-The scheduler starts automatically when the container starts and runs scans in the background.
+The container starts the scheduler automatically. Use the UI Scripts panel or the API to re-trigger scans whenever you like.
 
 ---
-
-## ⚙️ How it Works
-
-### 🔹 Backend Architecture
-
-- **Go CLI (`atlas`)**
-  - Built using Go 1.22
-  - Handles:
-    - `initdb`: Creates SQLite DB with required schema
-    - `fastscan`: Fast host scan using ARP/Nmap
-    - `dockerscan`: Gathers Docker container info from `docker inspect`
-    - `deepscan`: Enriches data with port scans, OS info, etc.
-
-- **FastAPI Backend**
-  - Runs on `port 8889`
-  - Serves:
-    - `/api/hosts` – all discovered hosts (regular + Docker)
-    - `/api/external` – external IP and metadata
-    - `/api/sites/summary` – aggregated view of remote sites/agents pushing data into Atlas
-    - `/api/sites/{site_id}/agents|hosts` – detail views for multi-site ingestion
-  - Accepts authenticated network data pushes (mTLS/headers handled at the proxy) through
-    `POST /api/sites/{site_id}/agents/{agent_id}/ingest`, enabling lightweight agents deployed
-    to branch offices or VPCs to stream host observations back to the controller.
-
-- **NGINX**
-  - Serves frontend (React static build) on `port 8888`
-  - Proxies API requests (`/api/`) to FastAPI (`localhost:8889`)
+## ⚙️ Environment Variables
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `ATLAS_UI_PORT` | Port NGINX listens on for the UI and proxied API | `8888` |
+| `ATLAS_API_PORT` | Port the FastAPI app listens on internally | `8889` |
+| `FASTSCAN_INTERVAL` | Seconds between fast ARP/host scans | `3600` |
+| `DOCKERSCAN_INTERVAL` | Seconds between Docker inventory refreshes | `3600` |
+| `DEEPSCAN_INTERVAL` | Seconds between deeper Nmap-style scans | `7200` |
+| `SCAN_SUBNETS` | Optional comma-separated list of CIDRs to scan. Leave unset to auto-detect the local subnet. | _unset_ |
 
 ---
+## 🛠️ Building the image yourself
+```bash
+git clone https://github.com/<your-org>/atlas.git
+cd atlas
 
-## 🌐 Remote Sites & Agents
+# Build the React UI (once per change)
+cd data/react-ui
+npm install     # or npm ci when package-lock.json is present
+npm run build
+cd ../..
 
-Atlas now ships with a lightweight multi-site ingestion plane so you can deploy the Go scanner
-as a remote agent and roll its findings up to a central controller:
+# Sync the built UI into data/html (what the Dockerfile copies into the image)
+rm -rf data/html/*
+cp -r data/react-ui/dist/* data/html/
 
-1. **Deploy an agent** (Docker/systemd) to every subnet you care about. Run the existing `atlas`
-   binary on a schedule and serialize scan results to JSON.
-2. **POST your findings** to the controller: `POST /api/sites/{site_id}/agents/{agent_id}/ingest`
-   with a payload shaped like:
+# Build the multi-stage Docker image
+DOCKER_BUILDKIT=1 docker build -t atlas:dev .
 
-   ```json
-   {
-     "site_name": "dublin-edge",
-     "agent_version": "1.4.0",
-     "hosts": [
-       {
-         "ip": "10.42.0.12",
-         "hostname": "fw-1",
-         "os": "FortiOS",
-         "ports": [{"port": 22, "protocol": "tcp", "service": "ssh"}]
-       }
-     ]
-   }
-   ```
+# Run your freshly built image (same flags as the quick start)
+docker run -d --name atlas --network host --cap-add NET_RAW --cap-add NET_ADMIN \
+  -v /var/run/docker.sock:/var/run/docker.sock atlas:dev
+```
 
-3. **Review aggregated state** through the new **Sites** tab in the React UI or the API endpoints:
-   - `GET /api/sites/summary` → counts + timestamps per site
-   - `GET /api/sites/{site_id}/hosts` → normalized host inventory
-   - `GET /api/sites/{site_id}/agents` → heartbeat + version metadata
-
-These additions provide the foundation for centrally-managed deployments without removing the
-original single-host scanning workflow.
+### 🔁 End-to-end helper script
+If you prefer a single guided workflow that builds the UI, writes `data/html/build-info.json`, builds/tags/pushes the Docker image, and runs the container, use [`deploy.sh`](./deploy.sh):
+```bash
+chmod +x deploy.sh
+./deploy.sh
+```
+The script prompts for the version tag, whether to tag as `latest`, and whether to push to Docker Hub. It also cleans up any old `atlas-dev` container before starting the new one.
 
 ---
-
-## 📂 Project Structure
-
-**Source Code (Host Filesystem)**
-
+## 🧱 Architecture overview
 ```
 atlas/
 ├── config/
-│   ├── atlas_go/        # Go source code (main.go, scan, db)
-│   ├── bin/             # Compiled Go binary (atlas)
-│   ├── db/              # SQLite file created on runtime
-│   ├── logs/            # Uvicorn logs
-│   ├── nginx/           # default.conf for port 8888
-│   └── scripts/         # FastAPI app + scheduler
+│   ├── atlas_go/        # Go CLI scanner source
+│   ├── nginx/           # default.conf template (rewrites /api to FastAPI)
+│   └── scripts/         # FastAPI app, scheduler, entrypoint shell scripts
 ├── data/
-│   ├── html/            # Static files served by Nginx
-│   └── react-ui/        # Frontend source (React)
-├── Dockerfile
-├── LICENSE
+│   ├── html/            # Static assets copied into the container image
+│   └── react-ui/        # React frontend source (Vite)
+├── Dockerfile           # Builds Go binary + Python/FastAPI/NGINX runtime
+├── deploy.sh            # Helper script for release builds & local runs
 └── README.md
 ```
 
-**Inside Container (/config)**
-```
-/config/
-├── bin/atlas             # Go binary entrypoint
-├── db/atlas.db           # Persistent SQLite3 DB
-├── logs/                 # Logs for FastAPI
-├── nginx/default.conf    # Nginx config
-└── scripts/atlas_check.sh # Entrypoint shell script
-
-```
+Inside the container everything lives under `/config`:
+- `/config/bin/atlas` – Go scanner
+- `/config/scripts/atlas_check.sh` – entrypoint (initialises DB, schedules scans, launches FastAPI + NGINX)
+- `/config/nginx/default.conf.template` – rendered with the UI/API port env vars at runtime
+- `/config/db/atlas.db` – SQLite database generated when the container starts
 
 ---
-
-## 🧪 React Frontend (Dev Instructions)
-
-This is a new React-based UI.
-
-### 🛠️ Setup and Build
-
-```bash
-cd data/react-ui
-npm install
-npm run build
-```
-
-The built output will be in:
-```
-data/react-ui/dist/
-```
-
-For development CI/CD (build the UI, backend, and Docker image):
-```bash
-./deploy.sh
-```
-
-
-## 🚀 CI/CD: Build and Publish a New Atlas Docker Image
-
-To deploy a new version and upload it to Docker Hub, use the provided CI/CD script:
-
-1. Build and publish a new image:
-
-   ```bash
-   ./deploy.sh
-   ```
-
-   - The script will prompt you for a version tag (e.g. `v3.2`).
-   - It will build the React frontend, copy to NGINX, build the Docker image, and push **both** `keinstien/atlas:$VERSION` and `keinstien/atlas:latest` to Docker Hub.
-
-2. Why push both tags?
-
-   - **Version tag:** Allows you to pin deployments to a specific release (e.g. `keinstien/atlas:v3.2`).
-   - **Latest tag:** Users can always pull the most recent stable build via `docker pull keinstien/atlas:latest`.
-
-3. The script will also redeploy the running container with the new version.
-
-**Example output:**
-```shell
-🔄 Tagging Docker image as latest
-📤 Pushing Docker image to Docker Hub...
-✅ Deployment complete for version: v3.2
-```
-
-> **Note:** Make sure you are logged in to Docker Hub (`docker login`) before running the script.
-
+## 🌐 Remote sites & ingestion
+Atlas can ingest data pushed from remote agents: `POST /api/sites/{site_id}/agents/{agent_id}/ingest` with a payload that lists hosts and metadata. The React UI includes a **Sites** tab and the API exposes helper endpoints (`/api/sites/summary`, `/api/sites/{site_id}/hosts`, `/api/sites/{site_id}/agents`) so you can monitor every location from a single controller.
 
 ---
-
-## 🌍 URLs
-
-- **Swagger API docs:**
-  - `🌍 http://localhost:8888/api/docs`
-
-- **Frontend UI (React SPA):**
-  - `🖥️ http://localhost:8888/`
-
-> Default exposed port is: `8888`
-
-### 📡 Scheduler API Endpoints
-
-New scheduler management endpoints:
-
-- `GET /api/scheduler/intervals` - Get current scan intervals for all scan types
-- `PUT /api/scheduler/intervals/{scan_type}` - Update interval for a specific scan type (fastscan, dockerscan, or deepscan)
-- `GET /api/scheduler/status` - Get scheduler status and current intervals
-
-Example:
-```bash
-# Get current intervals
-curl http://localhost:8888/api/scheduler/intervals
-
-# Update fastscan interval to 30 minutes (1800 seconds)
-curl -X PUT http://localhost:8888/api/scheduler/intervals/fastscan \
-  -H "Content-Type: application/json" \
-  -d '{"interval": 1800}'
-
-# Check scheduler status
-curl http://localhost:8888/api/scheduler/status
-```
+## 🧪 Troubleshooting tips
+- **UI doesn’t load on 8888?** Override `ATLAS_UI_PORT` (e.g. `-e ATLAS_UI_PORT=8884`) and make sure the host firewall allows the port you choose.
+- **Empty response / no network data?** Give the container `--network host` plus both `NET_RAW` and `NET_ADMIN` capabilities so ARP and Docker scans work. Without them the backend has nothing to display.
+- **Rebuild React UI** whenever you change `data/react-ui`. Copy the `dist/` output into `data/html/` _before_ building the Docker image or running `deploy.sh`.
 
 ---
-
-## ✅ Features
-
-- [x] **Multi-interface scanning** - Automatically detects and scans all physical network interfaces on the host
-- [x] Fast network scans (ping/ARP)
-- [x] **Multiple subnet scanning** - Scan your LAN, remote servers, and multiple networks simultaneously via SCAN_SUBNETS environment variable
-- [x] Docker container inspection with **multi-network support**
-- [x] **Multiple IPs and MACs per container** - Containers on multiple networks show all interfaces
-- [x] **Interface-aware host tracking** - Same host on multiple interfaces appears separately with interface labels
-- [x] External IP discovery
-- [x] Deep port scans with OS enrichment
-- [x] React-based dynamic frontend
-- [x] NGINX + FastAPI routing
-- [x] SQLite persistence
-- [x] **Scheduled auto scans with configurable intervals** - Configure via environment variables or UI
-- [x] **Dynamic interval management** - Change scan intervals without restarting the container
-
----
-
-## 📌 Dev Tips
-
-To edit Go logic:
-- Main packages: `config/atlas_go/internal/scan/`
-- Commands exposed via: `config/atlas_go/main.go`
-
-To edit API:
-- Python FastAPI app: `config/scripts/app.py`
-
-To edit UI:
-- Modify the React app under `data/react-ui`
-- Rebuild with `npm run build` to refresh `data/react-ui/dist`
-- Use `./deploy.sh` to copy the build output into the container image and push to Docker Hub
----
-
-## ⚙️ Automation Notes
-- Atlas runs automatically on container start.
-
-- All Go scan tasks run sequentially:
-   - `initdb → fastscan → deepscan → dockerscan`
-
-- Scheduled scans follow the intervals defined by `FASTSCAN_INTERVAL`, `DOCKERSCAN_INTERVAL`, and `DEEPSCAN_INTERVAL` (defaults: 3600s/3600s/7200s).
-
-- No cron dependency required inside the container.
-
-- Scans can also be manually triggered via the UI using API post request.
----
-## 👨‍💻 Author
-
-**Karam Ajaj**  
-Infrastructure & Automation Engineer  
-[https://github.com/karam-ajaj](https://github.com/karam-ajaj)
-
----
-
-## 📝 License
-
-MIT License — free for personal or commercial use.
-
----
-
-## 📚 Documentation
-
-- [Multi-Interface Support](MULTI_INTERFACE_SUPPORT.md) - Detailed guide on the multi-interface scanning feature
-- [Migration Guide](MIGRATION_GUIDE.md) - Guide for migrating from bash scripts to Go implementation
-
-## 🤝 Contributing
-
-Suggestions, bug reports, and pull requests are welcome!
-
+## 📄 License
+[MIT](./LICENSE)
