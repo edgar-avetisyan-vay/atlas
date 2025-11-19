@@ -57,6 +57,12 @@ class RemoteIngestPayload(BaseModel):
     agent_version: Optional[str] = None
     hosts: List[RemoteHost]
 
+
+class SiteDefinition(BaseModel):
+    site_id: str = Field(..., min_length=1)
+    site_name: Optional[str] = None
+    description: Optional[str] = None
+
 # Initialize scheduler on startup
 scheduler = get_scheduler()
 
@@ -104,6 +110,16 @@ CREATE TABLE IF NOT EXISTS remote_agents (
 );
 """
 
+REMOTE_SITES_TABLE = """
+CREATE TABLE IF NOT EXISTS remote_sites (
+    site_id TEXT PRIMARY KEY,
+    site_name TEXT,
+    description TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+"""
+
 
 def get_db_connection():
     conn = sqlite3.connect(DB_PATH)
@@ -114,6 +130,7 @@ def get_db_connection():
 def ensure_remote_tables(conn: sqlite3.Connection):
     conn.execute(REMOTE_HOSTS_TABLE)
     conn.execute(REMOTE_AGENTS_TABLE)
+    conn.execute(REMOTE_SITES_TABLE)
     conn.commit()
 
 # Scripts and their log files (used for POST tee + stream)
@@ -208,6 +225,23 @@ def ingest_remote_hosts(site_id: str, agent_id: str, payload: RemoteIngestPayloa
     ensure_remote_tables(conn)
     cur = conn.cursor()
 
+    # Ensure the site registry has a placeholder for this site so it shows up even before hosts ingest
+    cur.execute(
+        """
+        INSERT INTO remote_sites(site_id, site_name, created_at, updated_at)
+        VALUES(?, ?, ?, ?)
+        ON CONFLICT(site_id) DO UPDATE SET
+            site_name=COALESCE(site_name, excluded.site_name),
+            updated_at=excluded.updated_at
+        """,
+        (
+            site_id,
+            payload.site_name or site_id,
+            now,
+            now,
+        ),
+    )
+
     cur.execute(
         """
         INSERT INTO remote_agents(site_id, agent_id, site_name, agent_version, last_ingest, last_heartbeat)
@@ -279,6 +313,42 @@ def ingest_remote_hosts(site_id: str, agent_id: str, payload: RemoteIngestPayloa
     return {"status": "ok", "hosts_processed": inserted, "agent_id": agent_id, "site_id": site_id}
 
 
+@app.post("/sites", tags=["Remote Sites"])
+def register_site(site: SiteDefinition):
+    site_id = site.site_id.strip()
+    if not site_id:
+        raise HTTPException(status_code=400, detail="site_id is required")
+
+    site_name = site.site_name.strip() if site.site_name else site_id
+    description = site.description.strip() if site.description else None
+    now = datetime.utcnow().isoformat() + "Z"
+
+    conn = get_db_connection()
+    ensure_remote_tables(conn)
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO remote_sites(site_id, site_name, description, created_at, updated_at)
+        VALUES(?, ?, ?, ?, ?)
+        ON CONFLICT(site_id) DO UPDATE SET
+            site_name=excluded.site_name,
+            description=excluded.description,
+            updated_at=excluded.updated_at
+        """,
+        (site_id, site_name, description, now, now),
+    )
+    conn.commit()
+    conn.close()
+
+    return {
+        "status": "ok",
+        "site_id": site_id,
+        "site_name": site_name,
+        "description": description,
+        "updated_at": now,
+    }
+
+
 @app.get("/sites/summary", tags=["Remote Sites"])
 def get_site_summary():
     conn = get_db_connection()
@@ -297,31 +367,73 @@ def get_site_summary():
         ORDER BY site_id
         """
     )
-    rows = cur.fetchall()
+    host_map = {
+        row["site_id"]: {
+            "site_name": row["site_name"],
+            "host_count": row["host_count"],
+            "last_seen": row["last_seen"],
+            "updated_at": row["updated_at"],
+        }
+        for row in cur.fetchall()
+    }
 
     cur.execute(
         """
-        SELECT site_id, COUNT(*) as agent_count, MAX(last_heartbeat) as last_heartbeat
+        SELECT
+            site_id,
+            COALESCE(MAX(site_name), site_id) AS site_name,
+            COUNT(*) as agent_count,
+            MAX(last_heartbeat) as last_heartbeat
         FROM remote_agents
         GROUP BY site_id
         """
     )
-    agent_map = {row[0]: {"agent_count": row[1], "last_heartbeat": row[2]} for row in cur.fetchall()}
+    agent_map = {
+        row["site_id"]: {
+            "site_name": row["site_name"],
+            "agent_count": row["agent_count"],
+            "last_heartbeat": row["last_heartbeat"],
+        }
+        for row in cur.fetchall()
+    }
+
+    cur.execute(
+        "SELECT site_id, site_name, description, created_at, updated_at FROM remote_sites"
+    )
+    site_registry = {
+        row["site_id"]: {
+            "site_name": row["site_name"],
+            "description": row["description"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        }
+        for row in cur.fetchall()
+    }
     conn.close()
 
     summary = []
-    for row in rows:
-        site_id = row[0]
+    all_site_ids = set(site_registry.keys()) | set(host_map.keys()) | set(agent_map.keys())
+
+    for site_id in sorted(all_site_ids):
+        registry = site_registry.get(site_id, {})
+        host_stats = host_map.get(site_id, {})
         agent_info = agent_map.get(site_id, {})
         summary.append(
             {
                 "site_id": site_id,
-                "site_name": row[1],
-                "host_count": row[2],
-                "last_seen": row[3],
-                "updated_at": row[4],
+                "site_name": registry.get("site_name")
+                or host_stats.get("site_name")
+                or agent_info.get("site_name")
+                or site_id,
+                "description": registry.get("description"),
+                "host_count": host_stats.get("host_count", 0),
+                "last_seen": host_stats.get("last_seen") or agent_info.get("last_heartbeat"),
+                "updated_at": host_stats.get("updated_at")
+                or agent_info.get("last_heartbeat")
+                or registry.get("updated_at"),
                 "agent_count": agent_info.get("agent_count", 0),
                 "last_heartbeat": agent_info.get("last_heartbeat"),
+                "created_at": registry.get("created_at"),
             }
         )
 

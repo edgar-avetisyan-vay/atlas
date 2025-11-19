@@ -139,6 +139,7 @@ export const AtlasAPI = {
   getSiteSummary: () => apiGet("/sites/summary"),
   getSiteHosts: (siteId) => apiGet(`/sites/${encodeURIComponent(siteId)}/hosts`),
   getSiteAgents: (siteId) => apiGet(`/sites/${encodeURIComponent(siteId)}/agents`),
+  createSite: (payload) => apiPost("/sites", { json: payload }),
 };
 
 // Composite health (API + optional UI healthz)

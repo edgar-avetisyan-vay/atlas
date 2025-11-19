@@ -28,6 +28,8 @@ export default function SitesPanel() {
   const [agents, setAgents] = useState([]);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState(null);
+  const [createForm, setCreateForm] = useState({ site_id: "", site_name: "", description: "" });
+  const [createStatus, setCreateStatus] = useState({ loading: false, error: null, success: null });
 
   useEffect(() => {
     let timer;
@@ -58,6 +60,29 @@ export default function SitesPanel() {
       clearInterval(timer);
     };
   }, [selectedSite]);
+
+  async function handleCreateSite(event) {
+    event.preventDefault();
+    const trimmedId = createForm.site_id.trim();
+    if (!trimmedId) {
+      setCreateStatus({ loading: false, error: "Site ID is required", success: null });
+      return;
+    }
+
+    setCreateStatus({ loading: true, error: null, success: null });
+    try {
+      await AtlasAPI.createSite({
+        site_id: trimmedId,
+        site_name: createForm.site_name.trim() || undefined,
+        description: createForm.description.trim() || undefined,
+      });
+      setCreateStatus({ loading: false, error: null, success: "Site saved" });
+      setSelectedSite(trimmedId);
+      setCreateForm({ site_id: "", site_name: "", description: "" });
+    } catch (err) {
+      setCreateStatus({ loading: false, error: err.message || String(err), success: null });
+    }
+  }
 
   const activeSite = useMemo(
     () => sites.find((s) => s.site_id === selectedSite) || null,
@@ -116,6 +141,67 @@ export default function SitesPanel() {
         <div className="p-3 rounded bg-red-50 text-red-700 border border-red-200">{error}</div>
       )}
 
+      <section className="bg-white border border-gray-200 rounded-lg p-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-semibold">Register a site ahead of deployment</h3>
+            <p className="text-sm text-gray-500">
+              Create placeholders for each location so you can share IDs with remote teams before the agents come online.
+            </p>
+          </div>
+          {createStatus.loading && <span className="text-xs text-gray-400">Saving…</span>}
+        </div>
+        {createStatus.error && (
+          <p className="mt-3 text-sm text-red-600 border border-red-200 bg-red-50 rounded p-2">{createStatus.error}</p>
+        )}
+        {createStatus.success && (
+          <p className="mt-3 text-sm text-green-700 border border-green-200 bg-green-50 rounded p-2">{createStatus.success}</p>
+        )}
+        <form className="mt-4 grid gap-4 md:grid-cols-2" onSubmit={handleCreateSite}>
+          <label className="flex flex-col text-sm font-medium text-gray-700">
+            Site ID
+            <input
+              type="text"
+              value={createForm.site_id}
+              onChange={(e) => setCreateForm((prev) => ({ ...prev, site_id: e.target.value }))}
+              className="mt-1 rounded border-gray-300 focus:border-blue-500 focus:ring-blue-500"
+              placeholder="branch-001"
+              required
+            />
+          </label>
+          <label className="flex flex-col text-sm font-medium text-gray-700">
+            Friendly name
+            <input
+              type="text"
+              value={createForm.site_name}
+              onChange={(e) => setCreateForm((prev) => ({ ...prev, site_name: e.target.value }))}
+              className="mt-1 rounded border-gray-300 focus:border-blue-500 focus:ring-blue-500"
+              placeholder="Branch Office"
+            />
+          </label>
+          <label className="flex flex-col text-sm font-medium text-gray-700 md:col-span-2">
+            Notes
+            <textarea
+              value={createForm.description}
+              onChange={(e) => setCreateForm((prev) => ({ ...prev, description: e.target.value }))}
+              className="mt-1 rounded border-gray-300 focus:border-blue-500 focus:ring-blue-500"
+              rows="2"
+              placeholder="Optional context or escalation contacts"
+            />
+          </label>
+          <div className="md:col-span-2 flex items-center justify-between text-xs text-gray-500">
+            <p>Agents should target `/api/sites/{{site}}/agents/{{agent}}/ingest` with the Site ID shown here.</p>
+            <button
+              type="submit"
+              className="inline-flex items-center rounded bg-blue-600 px-4 py-2 text-white text-sm font-semibold disabled:opacity-50"
+              disabled={createStatus.loading}
+            >
+              Save site
+            </button>
+          </div>
+        </form>
+      </section>
+
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 overflow-y-auto max-h-60 pr-1">
         {sites.length === 0 && !loading && (
           <div className="col-span-full border border-dashed rounded-lg p-6 bg-white">
@@ -168,6 +254,9 @@ export default function SitesPanel() {
               </div>
               <span className="text-2xl font-bold text-blue-600">{site.host_count}</span>
             </div>
+            {site.description && (
+              <p className="mt-2 text-sm text-gray-600 break-words">{site.description}</p>
+            )}
             <dl className="mt-3 text-sm text-gray-600 space-y-1">
               <div className="flex justify-between">
                 <dt>Agents</dt>
