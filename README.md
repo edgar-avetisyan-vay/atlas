@@ -53,26 +53,25 @@ The container starts the scheduler automatically. Use the UI Scripts panel or th
 git clone https://github.com/<your-org>/atlas.git
 cd atlas
 
-# Build the React UI (once per change)
-cd data/react-ui
-npm install     # or npm ci when package-lock.json is present
-npm run build
-cd ../..
-
-# Sync the built UI into data/html (what the Dockerfile copies into the image)
-rm -rf data/html/*
-cp -r data/react-ui/dist/* data/html/
-
-# Build the multi-stage Docker image
+# Build the multi-stage Docker image (UI assets are compiled inside the Dockerfile)
 DOCKER_BUILDKIT=1 docker build -t atlas:dev .
+
+# Optionally provide UI metadata for the build tag
+DOCKER_BUILDKIT=1 docker build \
+  --build-arg UI_VERSION="1.2.3" \
+  --build-arg UI_COMMIT="$(git rev-parse --short HEAD)" \
+  --build-arg UI_BUILD_TIME="$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+  -t atlas:dev .
 
 # Run your freshly built image (same flags as the quick start)
 docker run -d --name atlas --network host --cap-add NET_RAW --cap-add NET_ADMIN \
   -v /var/run/docker.sock:/var/run/docker.sock atlas:dev
 ```
 
+`config/scripts/write_build_info.sh` is a small helper that writes `build-info.json` files (used by the UI footer). Run it locally to update `data/html/build-info.json` for development, or let the container entrypoint run it at boot to stamp the production assets automatically.
+
 ### 🔁 End-to-end helper script
-If you prefer a single guided workflow that builds the UI, writes `data/html/build-info.json`, builds/tags/pushes the Docker image, and runs the container, use [`deploy.sh`](./deploy.sh):
+If you prefer a single guided workflow that writes `data/html/build-info.json`, builds/tags/pushes the Docker image, and runs the container, use [`deploy.sh`](./deploy.sh):
 ```bash
 chmod +x deploy.sh
 ./deploy.sh
@@ -109,7 +108,7 @@ Atlas can ingest data pushed from remote agents: `POST /api/sites/{site_id}/agen
 ## 🧪 Troubleshooting tips
 - **UI doesn’t load on 8888?** Override `ATLAS_UI_PORT` (e.g. `-e ATLAS_UI_PORT=8884`) and make sure the host firewall allows the port you choose.
 - **Empty response / no network data?** Give the container `--network host` plus both `NET_RAW` and `NET_ADMIN` capabilities so ARP and Docker scans work. Without them the backend has nothing to display.
-- **Rebuild React UI** whenever you change `data/react-ui`. Copy the `dist/` output into `data/html/` _before_ building the Docker image or running `deploy.sh`.
+- **Rebuild React UI** simply by running `docker build` – the `ui-builder` stage now runs `npm ci && npm run build` automatically.
 
 ---
 ## 📄 License
