@@ -3,7 +3,9 @@ import { Network } from "vis-network";
 import { DataSet } from "vis-data";
 import { SelectedNodePanel } from "./SelectedNodePanel";
 // import { NetworkSettingsPanel } from "./NetworkSettingsPanel";
-import { apiGet } from "../api"; // NEW: centralized API helper (uses VITE_ envs)
+import { AtlasAPI } from "../api"; // NEW: centralized API helper (uses VITE_ envs)
+import { useSiteSource } from "../context/SiteSourceContext";
+import { remoteHostsToLegacyRows } from "../utils/remoteHosts";
 
 /**
  * Utilities
@@ -35,6 +37,7 @@ export function NetworkMap() {
   const [externalNode, setExternalNode] = useState(null);
   const [selectedSubnet, setSelectedSubnet] = useState(null);
   const [layoutStyle, setLayoutStyle] = useState("default");
+  const { activeSiteId } = useSiteSource();
 
   /**
    * Initial data load (hosts + external)
@@ -43,36 +46,56 @@ export function NetworkMap() {
     let aborted = false;
 
     async function fetchData() {
-      try {
-        const json = await apiGet("/hosts"); // was fetch("/api/hosts")
-        if (aborted) return;
-        const [nonDockerHosts, dockerHosts] = json;
-        setRawData({
-          nonDockerHosts: Array.isArray(nonDockerHosts) ? nonDockerHosts : [],
-          dockerHosts: Array.isArray(dockerHosts) ? dockerHosts : [],
-        });
+      setError(null);
+      setSelectedNode(null);
+      setSelectedRoute(null);
+      setSelectedSubnet(null);
 
-        // External info (public IP)
-        try {
-          const extJson = await apiGet("/external"); // was fetch("/api/external")
-          if (!aborted && extJson && Array.isArray(extJson) && extJson.length >= 2) {
-            setExternalNode({ id: extJson[0], ip: extJson[1] }); // [id, public_ip]
+      try {
+        if (activeSiteId) {
+          const remoteHosts = await AtlasAPI.getSiteHosts(activeSiteId);
+          if (aborted) return;
+          setRawData({
+            nonDockerHosts: remoteHostsToLegacyRows(remoteHosts),
+            dockerHosts: [],
+          });
+          setExternalNode(null);
+        } else {
+          const json = await AtlasAPI.getHosts();
+          if (aborted) return;
+          const [nonDockerHosts, dockerHosts] = json || [];
+          setRawData({
+            nonDockerHosts: Array.isArray(nonDockerHosts) ? nonDockerHosts : [],
+            dockerHosts: Array.isArray(dockerHosts) ? dockerHosts : [],
+          });
+
+          try {
+            const extJson = await AtlasAPI.getExternal();
+            if (!aborted && extJson && Array.isArray(extJson) && extJson.length >= 2) {
+              setExternalNode({ id: extJson[0], ip: extJson[1] });
+            } else if (!aborted) {
+              setExternalNode(null);
+            }
+          } catch {
+            if (!aborted) {
+              setExternalNode(null);
+            }
           }
-        } catch {
-          // Silent - external node is optional
-          console.warn("No external node detected.");
         }
       } catch (err) {
         if (!aborted) {
           console.error("Error loading host data:", err);
+          setRawData({ nonDockerHosts: [], dockerHosts: [] });
           setError("Failed to load network data.");
         }
       }
     }
 
     fetchData();
-    return () => { aborted = true; };
-  }, []);
+    return () => {
+      aborted = true;
+    };
+  }, [activeSiteId]);
 
   /**
    * Build / rebuild network whenever data, filters, layout or external node changes
