@@ -118,8 +118,38 @@ export default function SitesPanel() {
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 overflow-y-auto max-h-60 pr-1">
         {sites.length === 0 && !loading && (
-          <div className="col-span-full text-center text-gray-500 border border-dashed rounded p-6">
-            No remote sites have reported in yet.
+          <div className="col-span-full border border-dashed rounded-lg p-6 bg-white">
+            <div className="flex flex-col items-center text-center gap-3">
+              <div className="w-14 h-14 flex items-center justify-center rounded-full bg-blue-50 text-2xl">
+                🌐
+              </div>
+              <div>
+                <p className="text-lg font-semibold text-gray-800">Deploy your first remote site</p>
+                <p className="text-sm text-gray-500">
+                  Build the slim agent (`Dockerfile.agent`) and point it at this controller to populate the Sites dashboard.
+                </p>
+              </div>
+              <ol className="text-left text-sm text-gray-600 space-y-1">
+                <li>
+                  <span className="font-medium text-gray-800">1.</span> `docker build -f Dockerfile.agent -t atlas-agent .`
+                </li>
+                <li>
+                  <span className="font-medium text-gray-800">2.</span> `docker run -d --network host --cap-add NET_RAW --cap-add NET_ADMIN \`
+                  <br />
+                  <span className="ml-6">-e ATLAS_CONTROLLER_URL=https://controller/api -e ATLAS_SITE_ID=branch-001 \</span>
+                  <br />
+                  <span className="ml-6">-e ATLAS_AGENT_ID=edge01 atlas-agent`</span>
+                </li>
+                <li>
+                  <span className="font-medium text-gray-800">3.</span> Use `SCAN_SUBNETS="192.168.10.0/24"` if the auto-detected CIDR
+                  needs overriding.
+                </li>
+              </ol>
+              <p className="text-xs text-gray-500">
+                Agents post to `/api/sites/{{site}}/agents/{{agent}}/ingest`. Heartbeats show up here within a few seconds of the
+                first ingest.
+              </p>
+            </div>
           </div>
         )}
         {sites.map((site) => (
