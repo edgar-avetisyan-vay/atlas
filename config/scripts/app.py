@@ -1,11 +1,14 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse, FileResponse, StreamingResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import sqlite3
 import subprocess
 import logging
 import os
+import json
+from datetime import datetime
+from typing import Any, Dict, List, Optional
 from scripts.scheduler import get_scheduler
 
 app = FastAPI(
@@ -29,6 +32,31 @@ app.add_middleware(
 class IntervalUpdate(BaseModel):
     interval: int
 
+
+class RemotePort(BaseModel):
+    port: int
+    protocol: str = "tcp"
+    service: Optional[str] = None
+    state: Optional[str] = None
+
+
+class RemoteHost(BaseModel):
+    ip: str
+    hostname: Optional[str] = None
+    os: Optional[str] = None
+    mac: Optional[str] = None
+    note: Optional[str] = None
+    tags: List[str] = Field(default_factory=list)
+    last_seen: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
+    ports: List[RemotePort] = Field(default_factory=list)
+
+
+class RemoteIngestPayload(BaseModel):
+    site_name: Optional[str] = None
+    agent_version: Optional[str] = None
+    hosts: List[RemoteHost]
+
 # Initialize scheduler on startup
 scheduler = get_scheduler()
 
@@ -39,7 +67,54 @@ async def startup_event():
     scheduler.start()
 
 LOGS_DIR = "/config/logs"
+DB_PATH = "/config/db/atlas.db"
 os.makedirs(LOGS_DIR, exist_ok=True)
+
+REMOTE_HOSTS_TABLE = """
+CREATE TABLE IF NOT EXISTS remote_hosts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    site_id TEXT NOT NULL,
+    agent_id TEXT NOT NULL,
+    site_name TEXT,
+    agent_version TEXT,
+    ip TEXT NOT NULL,
+    hostname TEXT,
+    os TEXT,
+    mac TEXT,
+    note TEXT,
+    tags TEXT,
+    ports_json TEXT,
+    last_seen TEXT,
+    metadata_json TEXT,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(site_id, agent_id, ip)
+);
+"""
+
+REMOTE_AGENTS_TABLE = """
+CREATE TABLE IF NOT EXISTS remote_agents (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    site_id TEXT NOT NULL,
+    agent_id TEXT NOT NULL,
+    site_name TEXT,
+    agent_version TEXT,
+    last_ingest TEXT NOT NULL,
+    last_heartbeat TEXT NOT NULL,
+    UNIQUE(site_id, agent_id)
+);
+"""
+
+
+def get_db_connection():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def ensure_remote_tables(conn: sqlite3.Connection):
+    conn.execute(REMOTE_HOSTS_TABLE)
+    conn.execute(REMOTE_AGENTS_TABLE)
+    conn.commit()
 
 # Scripts and their log files (used for POST tee + stream)
 ALLOWED_SCRIPTS = {
@@ -101,6 +176,197 @@ def get_external_networks():
         return row if row else {}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+def _serialize_remote_host(row: sqlite3.Row) -> Dict[str, Any]:
+    return {
+        "id": row["id"],
+        "site_id": row["site_id"],
+        "agent_id": row["agent_id"],
+        "site_name": row["site_name"],
+        "agent_version": row["agent_version"],
+        "ip": row["ip"],
+        "hostname": row["hostname"],
+        "os": row["os"],
+        "mac": row["mac"],
+        "note": row["note"],
+        "tags": json.loads(row["tags"]) if row["tags"] else [],
+        "ports": json.loads(row["ports_json"]) if row["ports_json"] else [],
+        "last_seen": row["last_seen"],
+        "metadata": json.loads(row["metadata_json"]) if row["metadata_json"] else {},
+        "updated_at": row["updated_at"],
+    }
+
+
+@app.post("/sites/{site_id}/agents/{agent_id}/ingest", tags=["Remote Sites"])
+def ingest_remote_hosts(site_id: str, agent_id: str, payload: RemoteIngestPayload):
+    if not payload.hosts:
+        raise HTTPException(status_code=400, detail="hosts payload cannot be empty")
+
+    now = datetime.utcnow().isoformat() + "Z"
+    conn = get_db_connection()
+    ensure_remote_tables(conn)
+    cur = conn.cursor()
+
+    cur.execute(
+        """
+        INSERT INTO remote_agents(site_id, agent_id, site_name, agent_version, last_ingest, last_heartbeat)
+        VALUES(?, ?, ?, ?, ?, ?)
+        ON CONFLICT(site_id, agent_id) DO UPDATE SET
+            site_name=excluded.site_name,
+            agent_version=excluded.agent_version,
+            last_ingest=excluded.last_ingest,
+            last_heartbeat=excluded.last_heartbeat
+        """,
+        (
+            site_id,
+            agent_id,
+            payload.site_name,
+            payload.agent_version,
+            now,
+            now,
+        ),
+    )
+
+    inserted = 0
+    for host in payload.hosts:
+        tags_json = json.dumps(host.tags or []) if host.tags else json.dumps([])
+        ports_json = json.dumps([port.dict() for port in host.ports]) if host.ports else json.dumps([])
+        metadata_json = json.dumps(host.metadata or {}) if host.metadata else json.dumps({})
+        last_seen = host.last_seen or now
+
+        cur.execute(
+            """
+            INSERT INTO remote_hosts (
+                site_id, agent_id, site_name, agent_version, ip, hostname,
+                os, mac, note, tags, ports_json, last_seen, metadata_json, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(site_id, agent_id, ip) DO UPDATE SET
+                hostname=excluded.hostname,
+                os=excluded.os,
+                mac=excluded.mac,
+                note=excluded.note,
+                tags=excluded.tags,
+                ports_json=excluded.ports_json,
+                last_seen=excluded.last_seen,
+                metadata_json=excluded.metadata_json,
+                updated_at=excluded.updated_at,
+                site_name=excluded.site_name,
+                agent_version=excluded.agent_version
+            """,
+            (
+                site_id,
+                agent_id,
+                payload.site_name,
+                payload.agent_version,
+                host.ip,
+                host.hostname,
+                host.os,
+                host.mac,
+                host.note,
+                tags_json,
+                ports_json,
+                last_seen,
+                metadata_json,
+                now,
+            ),
+        )
+        inserted += 1
+
+    conn.commit()
+    conn.close()
+
+    return {"status": "ok", "hosts_processed": inserted, "agent_id": agent_id, "site_id": site_id}
+
+
+@app.get("/sites/summary", tags=["Remote Sites"])
+def get_site_summary():
+    conn = get_db_connection()
+    ensure_remote_tables(conn)
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT
+            site_id,
+            COALESCE(MAX(site_name), site_id) AS site_name,
+            COUNT(DISTINCT ip) AS host_count,
+            MAX(last_seen) AS last_seen,
+            MAX(updated_at) AS updated_at
+        FROM remote_hosts
+        GROUP BY site_id
+        ORDER BY site_id
+        """
+    )
+    rows = cur.fetchall()
+
+    cur.execute(
+        """
+        SELECT site_id, COUNT(*) as agent_count, MAX(last_heartbeat) as last_heartbeat
+        FROM remote_agents
+        GROUP BY site_id
+        """
+    )
+    agent_map = {row[0]: {"agent_count": row[1], "last_heartbeat": row[2]} for row in cur.fetchall()}
+    conn.close()
+
+    summary = []
+    for row in rows:
+        site_id = row[0]
+        agent_info = agent_map.get(site_id, {})
+        summary.append(
+            {
+                "site_id": site_id,
+                "site_name": row[1],
+                "host_count": row[2],
+                "last_seen": row[3],
+                "updated_at": row[4],
+                "agent_count": agent_info.get("agent_count", 0),
+                "last_heartbeat": agent_info.get("last_heartbeat"),
+            }
+        )
+
+    return summary
+
+
+@app.get("/sites/{site_id}/hosts", tags=["Remote Sites"])
+def get_hosts_for_site(site_id: str):
+    conn = get_db_connection()
+    ensure_remote_tables(conn)
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT * FROM remote_hosts
+        WHERE site_id = ?
+        ORDER BY hostname IS NULL, hostname, ip
+        """,
+        (site_id,),
+    )
+    rows = cur.fetchall()
+    conn.close()
+    return [_serialize_remote_host(row) for row in rows]
+
+
+@app.get("/sites/{site_id}/agents", tags=["Remote Sites"])
+def get_agents_for_site(site_id: str):
+    conn = get_db_connection()
+    ensure_remote_tables(conn)
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT agent_id, site_name, agent_version, last_ingest, last_heartbeat FROM remote_agents WHERE site_id = ?",
+        (site_id,),
+    )
+    rows = [
+        {
+            "agent_id": row[0],
+            "site_name": row[1],
+            "agent_version": row[2],
+            "last_ingest": row[3],
+            "last_heartbeat": row[4],
+        }
+        for row in cur.fetchall()
+    ]
+    conn.close()
+    return rows
 
 # POST still supported; now tees output to a persistent log file too
 @app.post("/scripts/run/{script_name}", tags=["Scripts"])

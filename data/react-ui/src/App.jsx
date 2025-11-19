@@ -7,9 +7,10 @@ import { useNetworkStats } from "./hooks/useNetworkStats";
 import BuildTag from "./components/BuildTag";
 import MobileHeader from "./components/MobileHeader";
 import LoginModal from "./components/LoginModal";
+import SitesPanel from "./components/SitesPanel";
 // Theme toggle removed per request
 
-const tabs = ["Network Map", "Hosts Table", "Scripts", "Logs"];
+const tabs = ["Network Map", "Hosts Table", "Sites", "Scripts", "Logs"];
 
 // Simple inline SVG icons (no external deps)
 function TabIcon({ tab, className = "w-6 h-6" }) {
@@ -223,6 +224,7 @@ export default function App() {
                 onClearPreset={() => setHostsShowDuplicates(false)}
               />
             )}
+            {activeTab === "Sites" && <SitesPanel />}
             {activeTab === "Scripts" && <ScriptsPanel />}
             {activeTab === "Logs" && <LogsPanel />}
           </div>
