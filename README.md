@@ -2,6 +2,10 @@
 
 Atlas is a containerized stack (Go scanner + FastAPI API + NGINX + React UI) that discovers the hosts that live on or near the Docker host it runs on and renders the results in an interactive dashboard. Everything you need to build, run, or redeploy the tool is in this repository.
 
+### 📢 Migration notice
+
+This project is now maintained by the community instead of the original author. Images are published to the `atlasproject/atlas` namespace going forward. If you have older notes or scripts that reference `keinstien/atlas`, update them to the new registry so future contributors and reviewers are all working from the same commands.
+
 ---
 ## ✨ Highlights
 - **Docker & host scanners** collect IPs, MACs, open ports, network names, and per-interface metadata for containers and LAN devices.
@@ -13,7 +17,7 @@ Atlas is a containerized stack (Go scanner + FastAPI API + NGINX + React UI) tha
 ## 🚀 Quick Start (pull & run)
 ```bash
 # 1. Pull the latest published image
-docker pull keinstien/atlas:latest
+docker pull atlasproject/atlas:latest
 
 # 2. Run it (requires host networking + NET_RAW/NET_ADMIN so the scanner can talk to the LAN)
 docker run -d \
@@ -28,7 +32,7 @@ docker run -d \
   -e DOCKERSCAN_INTERVAL=3600 \
   -e DEEPSCAN_INTERVAL=7200 \
   -e SCAN_SUBNETS="192.168.1.0/24,10.0.0.0/24" \
-  keinstien/atlas:latest
+  atlasproject/atlas:latest
 ```
 **Access**
 - UI: `http://<host-ip>:ATLAS_UI_PORT` (default 8888 – set it yourself if you prefer e.g. `8884`)
@@ -75,9 +79,13 @@ docker run -d --name atlas --network host --cap-add NET_RAW --cap-add NET_ADMIN 
 If you prefer a single guided workflow that builds the UI, writes `data/html/build-info.json`, builds/tags/pushes the Docker image, and runs the container, use [`deploy.sh`](./deploy.sh):
 ```bash
 chmod +x deploy.sh
+# Defaults to atlasproject/atlas; override with --image or IMAGE=my-registry/atlas
 ./deploy.sh
 ```
-The script prompts for the version tag, whether to tag as `latest`, and whether to push to Docker Hub. It also cleans up any old `atlas-dev` container before starting the new one.
+The script prompts for the version tag, whether to tag as `latest`, and whether to push to Docker Hub. It also cleans up any old `atlas-dev` container before starting the new one. Optional hooks:
+
+- Override the container registry by passing `--image ghcr.io/my-org/atlas` (or exporting `IMAGE=...`).
+- Run a custom backup command by exporting `RUN_BACKUP=1 BACKUP_SCRIPT=/path/to/script.sh`.
 
 ---
 ## 🧱 Architecture overview
