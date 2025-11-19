@@ -9,8 +9,17 @@ log() {
   printf "%s 🔹 %s\n" "$(date '+%Y-%m-%d %H:%M:%S')" "$1" | tee -a "$LOGFILE"
 }
 
+is_truthy() {
+  local val="${1:-}"
+  val="${val,,}"
+  [[ "$val" == "1" || "$val" == "true" || "$val" == "yes" || "$val" == "on" ]]
+}
+
 ATLAS_UI_PORT="${ATLAS_UI_PORT:-8888}"
 ATLAS_API_PORT="${ATLAS_API_PORT:-8889}"
+ATLAS_MODE="${ATLAS_MODE:-server}"
+
+log "Running in ${ATLAS_MODE} mode"
 
 # Render Nginx config (IMPORTANT: restrict variables so $uri etc. survive)
 if [[ -f /config/nginx/default.conf.template ]]; then
@@ -52,12 +61,14 @@ export PYTHONPATH=/config
 uvicorn scripts.app:app --host 0.0.0.0 --port "$ATLAS_API_PORT" > /config/logs/uvicorn.log 2>&1 &
 API_PID=$!
 
-# Note: Scans are now scheduled automatically by the scheduler module
-# The scheduler will run scans at configured intervals (see environment variables)
-log "📅 Scan scheduler will run scans at configured intervals"
-log "   - FASTSCAN_INTERVAL: ${FASTSCAN_INTERVAL:-3600}s (default: 3600s / 1 hour)"
-log "   - DOCKERSCAN_INTERVAL: ${DOCKERSCAN_INTERVAL:-3600}s (default: 3600s / 1 hour)"  
-log "   - DEEPSCAN_INTERVAL: ${DEEPSCAN_INTERVAL:-7200}s (default: 7200s / 2 hours)"
+if is_truthy "${ATLAS_ENABLE_SCHEDULER:-0}" && [[ "$ATLAS_MODE" != "agent" ]]; then
+  log "📅 Scan scheduler will run scans at configured intervals"
+  log "   - FASTSCAN_INTERVAL: ${FASTSCAN_INTERVAL:-3600}s (default: 3600s / 1 hour)"
+  log "   - DOCKERSCAN_INTERVAL: ${DOCKERSCAN_INTERVAL:-3600}s (default: 3600s / 1 hour)"
+  log "   - DEEPSCAN_INTERVAL: ${DEEPSCAN_INTERVAL:-7200}s (default: 7200s / 2 hours)"
+else
+  log "🛑 Scheduler disabled in server mode. Agents must report scans."
+fi
 
 # Start Nginx in foreground
 log "🌐 Starting Nginx server on port $ATLAS_UI_PORT..."

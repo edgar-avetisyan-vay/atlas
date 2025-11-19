@@ -11,6 +11,11 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 from scripts.scheduler import get_scheduler
 
+TRUTHY = {"1", "true", "yes", "on"}
+ATLAS_MODE = os.getenv("ATLAS_MODE", "server").lower()
+SCHEDULER_ENABLED = os.getenv("ATLAS_ENABLE_SCHEDULER", "0").lower() in TRUTHY and ATLAS_MODE != "agent"
+SCRIPTS_ENABLED = ATLAS_MODE != "server"
+
 app = FastAPI(
     title="Atlas Network API",
     description="Scan automation, infrastructure discovery, and visualization backend for Atlas",
@@ -63,18 +68,27 @@ class SiteDefinition(BaseModel):
     site_name: Optional[str] = None
     description: Optional[str] = None
 
-# Initialize scheduler on startup
-scheduler = get_scheduler()
+# Initialize scheduler on startup (server mode skips it entirely)
+scheduler = get_scheduler() if SCHEDULER_ENABLED else None
 
 @app.on_event("startup")
 async def startup_event():
     """Start the scheduler when the API starts."""
+    if scheduler is None:
+        logging.info("Scheduler disabled (server mode).")
+        return
     logging.info("Starting scan scheduler...")
     scheduler.start()
 
 LOGS_DIR = "/config/logs"
 DB_PATH = "/config/db/atlas.db"
 os.makedirs(LOGS_DIR, exist_ok=True)
+
+
+def _require_scheduler_enabled():
+    if scheduler is None:
+        raise HTTPException(status_code=404, detail="Scheduler disabled in server mode")
+    return scheduler
 
 REMOTE_HOSTS_TABLE = """
 CREATE TABLE IF NOT EXISTS remote_hosts (
@@ -147,7 +161,7 @@ ALLOWED_SCRIPTS = {
         "cmd": "/config/bin/atlas dockerscan",
         "log": os.path.join(LOGS_DIR, "scan-docker.log"),
     },
-}
+} if SCRIPTS_ENABLED else {}
 
 @app.get("/health", tags=["Meta"])
 def health():
@@ -483,6 +497,8 @@ def get_agents_for_site(site_id: str):
 # POST still supported; now tees output to a persistent log file too
 @app.post("/scripts/run/{script_name}", tags=["Scripts"])
 def run_named_script(script_name: str):
+    if not SCRIPTS_ENABLED:
+        raise HTTPException(status_code=403, detail="Local scripts disabled in server mode")
     if script_name not in ALLOWED_SCRIPTS:
         raise HTTPException(status_code=400, detail="Invalid script name")
 
@@ -509,6 +525,8 @@ def run_named_script(script_name: str):
 # NEW: proper live stream endpoint that ends when the process exits
 @app.get("/scripts/run/{script_name}/stream", tags=["Scripts"])
 def stream_named_script(script_name: str):
+    if not SCRIPTS_ENABLED:
+        raise HTTPException(status_code=403, detail="Local scripts disabled in server mode")
     if script_name not in ALLOWED_SCRIPTS:
         raise HTTPException(status_code=400, detail="Invalid script name")
 
@@ -656,13 +674,13 @@ def stream_log(filename: str):
 @app.get("/scheduler/intervals", tags=["Scheduler"])
 def get_scheduler_intervals():
     """Get current scan intervals for all scan types."""
-    return scheduler.get_intervals()
+    return _require_scheduler_enabled().get_intervals()
 
 @app.put("/scheduler/intervals/{scan_type}", tags=["Scheduler"])
 def update_scheduler_interval(scan_type: str, data: IntervalUpdate):
     """Update the interval for a specific scan type."""
     try:
-        scheduler.update_interval(scan_type, data.interval)
+        _require_scheduler_enabled().update_interval(scan_type, data.interval)
         return {"status": "success", "scan_type": scan_type, "interval": data.interval}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -673,6 +691,6 @@ def update_scheduler_interval(scan_type: str, data: IntervalUpdate):
 def get_scheduler_status():
     """Get scheduler status."""
     return {
-        "running": scheduler.is_running(),
-        "intervals": scheduler.get_intervals()
+        "running": _require_scheduler_enabled().is_running(),
+        "intervals": _require_scheduler_enabled().get_intervals()
     }
