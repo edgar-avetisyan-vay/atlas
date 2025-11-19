@@ -15,11 +15,22 @@ This project is now maintained by the community instead of the original author. 
 
 ---
 ## 🚀 Quick Start (pull & run)
-```bash
-# 1. Pull the latest published image (skip this step if you want to stay 100% offline and build locally)
-docker pull atlasproject/atlas:latest
+The **bare-minimum command** pulls the public image and runs it with the permissions the scanner needs. No tagging, no pushes, no extra knobs:
 
-# 2. Run it (requires host networking + NET_RAW/NET_ADMIN so the scanner can talk to the LAN)
+```bash
+docker pull atlasproject/atlas:latest
+docker run -d \
+  --name atlas \
+  --network host \
+  --cap-add NET_RAW \
+  --cap-add NET_ADMIN \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  atlasproject/atlas:latest
+```
+
+Ports default to `ATLAS_UI_PORT=8888` and `ATLAS_API_PORT=8889`, so hit `http://localhost:8888/` for the UI and `http://localhost:8888/api/docs` for the FastAPI docs. Override the ports only if you really need to:
+
+```bash
 docker run -d \
   --name atlas \
   --network host \
@@ -28,15 +39,40 @@ docker run -d \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -e ATLAS_UI_PORT=8884 \
   -e ATLAS_API_PORT=8885 \
-  -e FASTSCAN_INTERVAL=3600 \
-  -e DOCKERSCAN_INTERVAL=3600 \
-  -e DEEPSCAN_INTERVAL=7200 \
-  -e SCAN_SUBNETS="192.168.1.0/24,10.0.0.0/24" \
   atlasproject/atlas:latest
 ```
+
+**Optional knobs** (leave them alone unless you need to tweak scheduling):
+
+```bash
+-e FASTSCAN_INTERVAL=3600 \
+-e DOCKERSCAN_INTERVAL=3600 \
+-e DEEPSCAN_INTERVAL=7200 \
+-e SCAN_SUBNETS="192.168.1.0/24,10.0.0.0/24" \
+```
+
 **Access**
-- UI: `http://<host-ip>:ATLAS_UI_PORT` (default 8888 – set it yourself if you prefer e.g. `8884`)
-- API: `http://<host-ip>:ATLAS_API_PORT/api/docs` (FastAPI docs are also reachable through the UI proxy: `http://<host-ip>:ATLAS_UI_PORT/api/docs`)
+- UI: `http://<host-ip>:ATLAS_UI_PORT` (defaults to `http://localhost:8888/` – change it to `8884` or anything else if you prefer)
+- API: `http://<host-ip>:ATLAS_UI_PORT/api/docs` via the UI proxy (or `http://<host-ip>:ATLAS_API_PORT/api/docs` directly)
+
+If the browser only shows the stock NGINX welcome page, it usually means the container never started the FastAPI/React stack. Double-check that you used `--network host` and both capability flags – without them the entrypoint exits early.
+
+---
+## 🙋 One-command local build (no pushes, no tags)
+Need an even simpler flow for teammates that just want it running on their laptop? Use the new helper script:
+
+```bash
+chmod +x local-run.sh
+./local-run.sh
+```
+
+The script:
+- writes `data/html/build-info.json` so the UI footer shows the build time,
+- builds a throwaway `atlas-local` image with BuildKit,
+- stops/replaces any existing `atlas-local` container, and
+- starts Atlas on host networking with the UI at `http://localhost:8884/` and the FastAPI docs at `http://localhost:8884/api/docs`.
+
+No registries, no pushes, no extra flags – rerun the script whenever you need a fresh copy.
 
 The container starts the scheduler automatically. Use the UI Scripts panel or the API to re-trigger scans whenever you like.
 
