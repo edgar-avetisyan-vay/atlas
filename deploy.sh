@@ -27,12 +27,16 @@ fi
 
 # Resolve repo root from this script's location
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-UI_DIR="${REPO_ROOT}/data/react-ui"
 HTML_DIR="${REPO_ROOT}/data/html"
-IMAGE_DEFAULT="atlasproject/atlas"
-IMAGE="${IMAGE:-$IMAGE_DEFAULT}"
+
+BUILD_INFO_SCRIPT="${REPO_ROOT}/config/scripts/write_build_info.sh"
+IMAGE="keinstien/atlas"
 CONTAINER_NAME="atlas-dev"
-CURRENT_VERSION=$(awk -F'"' '{print $4}' $HTML_DIR/build-info.json)
+if [[ -f "$HTML_DIR/build-info.json" ]]; then
+  CURRENT_VERSION=$(awk -F'"' '{print $4}' "$HTML_DIR/build-info.json")
+else
+  CURRENT_VERSION="unknown"
+fi
 
 usage() {
   cat <<EOF
@@ -69,7 +73,6 @@ done
 set -- "${PARSED_ARGS[@]}"
 
 echo "📁 Repo root: $REPO_ROOT"
-echo "🧩 UI dir:    $UI_DIR"
 echo "🗂️  HTML dir:   $HTML_DIR"
 
 # Prompt for version (allow env override)
@@ -103,35 +106,19 @@ fi
 
 # Sanity checks
 command -v docker >/dev/null 2>&1 || { echo "❌ docker is not installed or not in PATH"; exit 1; }
-command -v npm >/dev/null 2>&1 || { echo "❌ npm is not installed or not in PATH"; exit 1; }
-[[ -d "$UI_DIR" ]] || { echo "❌ React UI directory not found at: $UI_DIR"; exit 1; }
 
 echo "📦 Starting deployment for version: $VERSION (image: $IMAGE)"
 
-# Step 1: Build React UI from repo's data/react-ui
-echo "🛠️ Building React UI..."
-pushd "$UI_DIR" >/dev/null
-if [[ -f package-lock.json ]]; then
-  npm ci
-else
-  npm install
-fi
-npm run build
-popd >/dev/null
-
-# Step 2: Copy UI build output to data/html (used by Dockerfile)
-echo "📂 Copying UI build to data/html..."
-mkdir -p "$HTML_DIR"
-rm -rf "${HTML_DIR:?}/"* 2>/dev/null || true
-cp -r "$UI_DIR/dist/"* "$HTML_DIR/"
-
-# Step 2b: Write build-info.json for the UI to display
+# Step 1: Write build-info.json for local dev fallbacks
 echo "📝 Writing build-info.json..."
 COMMIT_SHA="$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo 'dirty')"
 BUILD_TIME="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-cat > "${HTML_DIR}/build-info.json" <<EOF
-{ "version": "${VERSION}", "commit": "${COMMIT_SHA}", "builtAt": "${BUILD_TIME}" }
-EOF
+if [[ -x "$BUILD_INFO_SCRIPT" ]]; then
+  ATLAS_UI_VERSION="$VERSION" ATLAS_UI_COMMIT="$COMMIT_SHA" ATLAS_UI_BUILT_AT="$BUILD_TIME" \
+    "$BUILD_INFO_SCRIPT" "$HTML_DIR/build-info.json"
+else
+  echo "⚠️ $BUILD_INFO_SCRIPT missing; skipping build-info write"
+fi
 
 # Step 3: Stop and remove existing container if present
 echo "🧹 Removing existing '$CONTAINER_NAME' container if running..."
@@ -155,7 +142,11 @@ fi
 
 # Step 5: Build Docker image from repo root
 echo "🐳 Building Docker image: $IMAGE:$VERSION"
-DOCKER_BUILDKIT=1 docker build -t "$IMAGE:$VERSION" "$REPO_ROOT"
+DOCKER_BUILDKIT=1 docker build \
+  --build-arg UI_VERSION="$VERSION" \
+  --build-arg UI_COMMIT="$COMMIT_SHA" \
+  --build-arg UI_BUILD_TIME="$BUILD_TIME" \
+  -t "$IMAGE:$VERSION" "$REPO_ROOT"
 
 # Step 5b: Optionally tag as latest
 if $DO_LATEST; then

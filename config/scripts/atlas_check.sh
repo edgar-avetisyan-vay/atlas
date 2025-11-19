@@ -20,6 +20,15 @@ else
   log "⚠️ Template /config/nginx/default.conf.template missing. Using existing config."
 fi
 
+# Refresh build-info for the UI so the version tag is accurate
+if [[ -x /config/scripts/write_build_info.sh ]]; then
+  log "📝 Writing UI build-info metadata..."
+  /config/scripts/write_build_info.sh /usr/share/nginx/html/build-info.json || \
+    log "⚠️ Failed to write /usr/share/nginx/html/build-info.json"
+else
+  log "⚠️ /config/scripts/write_build_info.sh missing; build-info will be stale"
+fi
+
 # Ensure Go binary exists
 if [[ ! -x /config/bin/atlas ]]; then
   log "❌ Missing /config/bin/atlas (Go scanner). Scans will fail."
