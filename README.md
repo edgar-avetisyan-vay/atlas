@@ -163,10 +163,50 @@ The scheduler starts automatically when the container starts and runs scans in t
   - Serves:
     - `/api/hosts` – all discovered hosts (regular + Docker)
     - `/api/external` – external IP and metadata
+    - `/api/sites/summary` – aggregated view of remote sites/agents pushing data into Atlas
+    - `/api/sites/{site_id}/agents|hosts` – detail views for multi-site ingestion
+  - Accepts authenticated network data pushes (mTLS/headers handled at the proxy) through
+    `POST /api/sites/{site_id}/agents/{agent_id}/ingest`, enabling lightweight agents deployed
+    to branch offices or VPCs to stream host observations back to the controller.
 
 - **NGINX**
   - Serves frontend (React static build) on `port 8888`
   - Proxies API requests (`/api/`) to FastAPI (`localhost:8889`)
+
+---
+
+## 🌐 Remote Sites & Agents
+
+Atlas now ships with a lightweight multi-site ingestion plane so you can deploy the Go scanner
+as a remote agent and roll its findings up to a central controller:
+
+1. **Deploy an agent** (Docker/systemd) to every subnet you care about. Run the existing `atlas`
+   binary on a schedule and serialize scan results to JSON.
+2. **POST your findings** to the controller: `POST /api/sites/{site_id}/agents/{agent_id}/ingest`
+   with a payload shaped like:
+
+   ```json
+   {
+     "site_name": "dublin-edge",
+     "agent_version": "1.4.0",
+     "hosts": [
+       {
+         "ip": "10.42.0.12",
+         "hostname": "fw-1",
+         "os": "FortiOS",
+         "ports": [{"port": 22, "protocol": "tcp", "service": "ssh"}]
+       }
+     ]
+   }
+   ```
+
+3. **Review aggregated state** through the new **Sites** tab in the React UI or the API endpoints:
+   - `GET /api/sites/summary` → counts + timestamps per site
+   - `GET /api/sites/{site_id}/hosts` → normalized host inventory
+   - `GET /api/sites/{site_id}/agents` → heartbeat + version metadata
+
+These additions provide the foundation for centrally-managed deployments without removing the
+original single-host scanning workflow.
 
 ---
 
@@ -182,7 +222,7 @@ atlas/
 │   ├── db/              # SQLite file created on runtime
 │   ├── logs/            # Uvicorn logs
 │   ├── nginx/           # default.conf for port 8888
-│   └── scripts/         # startup shell scripts
+│   └── scripts/         # FastAPI app + scheduler
 ├── data/
 │   ├── html/            # Static files served by Nginx
 │   └── react-ui/        # Frontend source (React)
