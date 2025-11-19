@@ -198,6 +198,17 @@ Once an agent ingests data the Sites panel shows the site name, total hosts, the
 
 ---
 ## 🧪 Troubleshooting tips
+
+### Remote agent is scanning but the site stays empty
+It usually means the agent completed the local scan but never managed to post the ingest payload to the controller. Walk through the steps below to pinpoint the break:
+
+1. **Confirm the controller URL is valid.** The agent blindly POSTs to `ATLAS_CONTROLLER_URL`, so the value must be a real base API URL such as `http://10.1.255.110:8885/api`. Double check that you are not mixing schemes (`https://http://…`) or leaving out the controller’s port.
+2. **Tail both sets of logs.** `docker logs -f atlas-agent` should show the scan followed by `Posting payload to …` (or an HTTP error). On the controller side run `docker logs -f atlas-local` and watch for `POST /api/sites/.../ingest` entries or FastAPI tracebacks. If the controller never logs the ingest route the request is not reaching it.
+3. **Validate reachability from the agent host.** Run `curl -v http://10.1.255.110:8885/api/health` (swap the scheme/port for your deployment) from the same machine that hosts the agent container. Successful output proves routing, DNS, and certificates are correct.
+4. **Check site/agent identifiers.** The controller discards payloads whose `{site_id, agent_id}` do not match an existing site/agent pair. Make sure the IDs in the agent env vars are exactly the ones you created via the UI/API (case sensitive, no extra whitespace).
+5. **Authenticate if required.** If your controller enforces auth, export `ATLAS_AGENT_TOKEN` and verify the token issuer expects a `Bearer` header. 401/403 responses in the agent logs almost always point to a missing/invalid token.
+
+Running the agent and controller on the same host is supported as long as the controller URL points back to the host network (usually `http://127.0.0.1:<api-port>/api` or the host’s LAN IP). Once the ingest succeeds the Sites tile updates immediately, and “Last Seen” matches the agent’s heartbeat interval.
 - **UI doesn’t load on 8888?** Override `ATLAS_UI_PORT` (e.g. `-e ATLAS_UI_PORT=8884`) and make sure the host firewall allows the port you choose.
 - **Empty response / no network data?** Give the container `--network host` plus both `NET_RAW` and `NET_ADMIN` capabilities so ARP and Docker scans work. Without them the backend has nothing to display.
 - **Rebuild React UI** simply by running `docker build` – the `ui-builder` stage now runs `npm ci && npm run build` automatically.
