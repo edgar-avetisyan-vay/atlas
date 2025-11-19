@@ -28,6 +28,19 @@ function TabIcon({ tab, className = "w-6 h-6" }) {
           <path d="M3 5h18v4H3zM3 10.5h18M3 15h18M3 19h18" stroke="currentColor" strokeWidth="1.5" fill="none"/>
         </svg>
       );
+    case "Sites":
+      return (
+        <svg viewBox="0 0 24 24" className={`${className} ${common}`}>
+          <path
+            d="M4 5h16v6H4zM6 11v8h4v-5h4v5h4v-8"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            fill="none"
+            strokeLinejoin="round"
+          />
+          <path d="M2 21h20" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
+      );
     case "Scripts":
       return (
         <svg viewBox="0 0 24 24" className={`${className} ${common}`}>
