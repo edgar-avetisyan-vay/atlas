@@ -8,17 +8,19 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
 	"atlas/internal/utils"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 // Use - for all ports (TCP/UDP)
 const tcpPortArg = "-"
-// const udpPortArg = "-" // UDP scan commented 
+
+// const udpPortArg = "-" // UDP scan commented
 
 type HostInfo struct {
 	IP            string
@@ -82,9 +84,10 @@ func discoverLiveHosts(subnet string) ([]HostInfo, error) {
 }
 
 // Parse nmap port string to human-readable form (show only open/filtered)
-func parseNmapPorts(s string) string {
+func parseNmapPorts(s string) PortDetails {
 	parts := strings.Split(s, ",")
 	var readable []string
+	var ports []RemotePort
 	for _, p := range parts {
 		fields := strings.Split(p, "/")
 		if len(fields) < 5 {
@@ -93,22 +96,25 @@ func parseNmapPorts(s string) string {
 		state := fields[1]
 		proto := fields[2]
 		service := fields[4]
-		port := fields[0]
+		portStr := fields[0]
 		if state == "open" || state == "filtered" {
+			part := fmt.Sprintf("%s/%s", portStr, proto)
 			if service != "" {
-				readable = append(readable, fmt.Sprintf("%s/%s (%s)", port, proto, service))
-			} else {
-				readable = append(readable, fmt.Sprintf("%s/%s", port, proto))
+				part = fmt.Sprintf("%s (%s)", part, service)
 			}
+			readable = append(readable, part)
+			portNum, _ := strconv.Atoi(portStr)
+			ports = append(ports, RemotePort{Port: portNum, Protocol: proto, Service: service, State: state})
 		}
 	}
-	if len(readable) == 0 {
-		return "Unknown"
+	summary := "Unknown"
+	if len(readable) > 0 {
+		summary = strings.Join(readable, ", ")
 	}
-	return strings.Join(readable, ", ")
+	return PortDetails{Summary: summary, Ports: ports}
 }
 
-func scanAllTcp(ip string, logProgress *os.File) (string, string) {
+func scanAllTcp(ip string, logProgress *os.File) (PortDetails, string) {
 	logFile := fmt.Sprintf("/config/logs/nmap_tcp_%s.log", strings.ReplaceAll(ip, ".", "_"))
 	nmapArgs := []string{"-O", "-p-", ip, "-oG", logFile}
 	start := time.Now()
@@ -119,13 +125,13 @@ func scanAllTcp(ip string, logProgress *os.File) (string, string) {
 
 	file, err := os.Open(logFile)
 	if err != nil {
-		return "Unknown", "Unknown"
+		return PortDetails{Summary: "Unknown"}, "Unknown"
 	}
 	defer file.Close()
 
-	var ports string
+	ports := PortDetails{Summary: "Unknown"}
 	var osInfo string
-	// Match all text between Ports: and Ignored State: 
+	// Match all text between Ports: and Ignored State:
 	rePorts := regexp.MustCompile(`Ports: ([^\n]*?)Ignored State:`)
 	reOS := regexp.MustCompile(`OS: (.*)`)
 
@@ -143,9 +149,6 @@ func scanAllTcp(ip string, logProgress *os.File) (string, string) {
 			}
 			osInfo = strings.TrimSpace(osInfo)
 		}
-	}
-	if ports == "" {
-		ports = "Unknown"
 	}
 	return ports, osInfo
 }
@@ -211,14 +214,14 @@ func DeepScan() error {
 		// Fallback to default subnet if auto-detection fails
 		interfaces = []utils.InterfaceInfo{{Name: "unknown", Subnet: "192.168.2.0/24", IP: ""}}
 	}
-	
+
 	startTime := time.Now()
 	logFile := "/config/logs/deep_scan_progress.log"
 	lf, _ := os.Create(logFile)
 	defer lf.Close()
 
 	var hostInfos []HostInfo
-	
+
 	// Discover live hosts on all interfaces
 	for _, iface := range interfaces {
 		fmt.Fprintf(lf, "Discovering live hosts on %s (interface: %s)...\n", iface.Subnet, iface.Name)
@@ -234,7 +237,7 @@ func DeepScan() error {
 			hostInfos = append(hostInfos, host)
 		}
 	}
-	
+
 	total := len(hostInfos)
 	fmt.Fprintf(lf, "Total discovered: %d hosts in %s\n", total, time.Since(startTime))
 
@@ -272,26 +275,25 @@ func DeepScan() error {
 			if idx+1 > 0 {
 				estLeft = (elapsed / time.Duration(idx+1)) * time.Duration(hostsLeft)
 			}
-			fmt.Fprintf(lf, "Host %s: TCP ports: %s, OS: %s\n", ip, tcpPorts, osInfo)
+			fmt.Fprintf(lf, "Host %s: TCP ports: %s, OS: %s\n", ip, tcpPorts.Summary, osInfo)
 			fmt.Fprintf(lf, "Progress: %d/%d hosts, elapsed: %s, estimated left: %s\n", idx+1, total, elapsed, estLeft)
 
-			openPorts := tcpPorts
-			if openPorts == "" {
-				openPorts = "Unknown"
+			record := HostRecord{
+				IP:            ip,
+				Hostname:      name,
+				OS:            osInfo,
+				MAC:           mac,
+				PortSummary:   tcpPorts.Summary,
+				Ports:         tcpPorts.Ports,
+				InterfaceName: host.InterfaceName,
+				NetworkName:   "LAN",
+				LastSeen:      time.Now(),
+				OnlineStatus:  status,
+				Metadata: map[string]any{
+					"scanner": "deepscan",
+				},
 			}
-
-			_, err = db.Exec(`
-				INSERT INTO hosts (ip, name, os_details, mac_address, open_ports, next_hop, network_name, interface_name, last_seen, online_status)
-				VALUES (?, ?, ?, ?, ?, '', 'LAN', ?, CURRENT_TIMESTAMP, ?)
-				ON CONFLICT(ip, interface_name) DO UPDATE SET
-					name=excluded.name,
-					os_details=excluded.os_details,
-					mac_address=excluded.mac_address,
-					open_ports=excluded.open_ports,
-					last_seen=CURRENT_TIMESTAMP,
-					online_status=excluded.online_status
-			`, ip, name, osInfo, mac, openPorts, host.InterfaceName, status)
-			if err != nil {
+			if err := upsertHost(db, record); err != nil {
 				fmt.Fprintf(lf, "❌ Update failed for %s on interface %s: %v\n", ip, host.InterfaceName, err)
 			}
 			fmt.Fprintf(lf, "Host %s scanned in %s\n", ip, time.Since(hostStart))

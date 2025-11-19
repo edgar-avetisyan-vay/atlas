@@ -47,6 +47,19 @@ The container starts the scheduler automatically. Use the UI Scripts panel or th
 | `DEEPSCAN_INTERVAL` | Seconds between deeper Nmap-style scans | `7200` |
 | `SCAN_SUBNETS` | Optional comma-separated list of CIDRs to scan. Leave unset to auto-detect the local subnet. | _unset_ |
 
+### Remote controller & agent settings
+
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `ATLAS_CONTROLLER_URL` | Base URL for the central controller API (e.g. `https://atlas.example.com/api`) | _unset_ |
+| `ATLAS_SITE_ID` | Site identifier used when posting to `/sites/{site}/agents/{agent}/ingest` | _unset_ |
+| `ATLAS_SITE_NAME` | Optional friendly name shown in the controller UI | falls back to `ATLAS_SITE_ID` |
+| `ATLAS_AGENT_ID` | Unique agent identifier within the site | _unset_ |
+| `ATLAS_AGENT_VERSION` | Label included in ingest payloads (`atlas fastscan --agent-version v1.0.0`) | scanner build version |
+| `ATLAS_AGENT_TOKEN` | Bearer token that is attached as `Authorization: Bearer <token>` when posting to the controller | _unset_ |
+| `ATLAS_AGENT_INTERVAL` | Interval for `atlas agent` when running in container mode. Supports Go duration strings (`15m`, `1h`) or seconds. | `15m` |
+| `ATLAS_AGENT_ONCE` | Set to `true`/`1` to run a single remote scan and exit | `false` |
+
 ---
 ## 🛠️ Building the image yourself
 ```bash
@@ -104,6 +117,42 @@ Inside the container everything lives under `/config`:
 ---
 ## 🌐 Remote sites & ingestion
 Atlas can ingest data pushed from remote agents: `POST /api/sites/{site_id}/agents/{agent_id}/ingest` with a payload that lists hosts and metadata. The React UI includes a **Sites** tab and the API exposes helper endpoints (`/api/sites/summary`, `/api/sites/{site_id}/hosts`, `/api/sites/{site_id}/agents`) so you can monitor every location from a single controller.
+
+### CLI helpers
+
+```bash
+# Discover hosts and print the ingest payload without touching SQLite
+./atlas fastscan --json
+
+# Discover hosts and POST directly to a controller
+./atlas fastscan \
+  --remote https://controller.example.com/api \
+  --site branch-001 \
+  --agent edge01 \
+  --token <api-token> \
+  --site-name "Branch Office" \
+  --agent-version v0.3.0
+```
+
+The same `--remote/--site/--agent/--token/--json` flags exist for `dockerscan`. When either `--remote` or `--json` is specified the scanner produces the `/ingest` DTOs instead of writing to SQLite, so you can script remote pushes or pipe the JSON elsewhere.
+
+### Remote agent container
+
+[`Dockerfile.agent`](./Dockerfile.agent) builds a slim image that only contains the Go scanner. It boots into `atlas agent`, honours the controller env vars listed above, and posts results on a schedule:
+
+```bash
+docker build -f Dockerfile.agent -t atlas-agent .
+docker run -d --name atlas-agent \
+  --network host \
+  --cap-add NET_RAW --cap-add NET_ADMIN \
+  -e ATLAS_CONTROLLER_URL=https://controller.example.com/api \
+  -e ATLAS_SITE_ID=branch-001 \
+  -e ATLAS_AGENT_ID=edge01 \
+  -e ATLAS_AGENT_TOKEN=<api-token> \
+  atlas-agent
+```
+
+Set `ATLAS_AGENT_INTERVAL` (supports values like `10m`, `3600`) or `ATLAS_AGENT_ONCE=true` to control scheduling behaviour. Logs stream to stdout so `docker logs atlas-agent` shows every ingest attempt.
 
 ---
 ## 🧪 Troubleshooting tips

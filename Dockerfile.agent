@@ -1,0 +1,14 @@
+# Lightweight image for remote agents that only need the Go scanner
+FROM golang:1.25.3 AS builder
+WORKDIR /src
+COPY config/atlas_go /src
+RUN go build -o atlas .
+
+FROM debian:12-slim
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        nmap iproute2 iputils-ping curl ca-certificates nbtscan && \
+    rm -rf /var/lib/apt/lists/*
+COPY --from=builder /src/atlas /usr/local/bin/atlas
+ENV ATLAS_AGENT_INTERVAL=15m
+ENTRYPOINT ["atlas", "agent"]
