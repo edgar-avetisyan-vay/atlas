@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { AtlasAPI } from "../api";
+import { useSiteSource } from "../context/SiteSourceContext";
 
 function formatDate(value) {
   if (!value) return "—";
@@ -23,13 +24,13 @@ export default function SitesPanel() {
   const [sites, setSites] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [selectedSite, setSelectedSite] = useState(null);
   const [hosts, setHosts] = useState([]);
   const [agents, setAgents] = useState([]);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState(null);
   const [createForm, setCreateForm] = useState({ site_id: "", site_name: "", description: "" });
   const [createStatus, setCreateStatus] = useState({ loading: false, error: null, success: null });
+  const { activeSiteId, activeSiteName, setActiveSite, clearActiveSite } = useSiteSource();
 
   useEffect(() => {
     let timer;
@@ -42,8 +43,11 @@ export default function SitesPanel() {
         const summary = await AtlasAPI.getSiteSummary();
         if (!mounted) return;
         setSites(summary);
-        if (!selectedSite && summary.length) {
-          setSelectedSite(summary[0].site_id);
+        if (activeSiteId) {
+          const match = summary.find((s) => s.site_id === activeSiteId);
+          if (match && match.site_name && match.site_name !== activeSiteName) {
+            setActiveSite(match.site_id, match.site_name);
+          }
         }
       } catch (err) {
         if (mounted) setError(err.message || String(err));
@@ -59,7 +63,7 @@ export default function SitesPanel() {
       mounted = false;
       clearInterval(timer);
     };
-  }, [selectedSite]);
+  }, [activeSiteId, activeSiteName, setActiveSite]);
 
   async function handleCreateSite(event) {
     event.preventDefault();
@@ -77,7 +81,7 @@ export default function SitesPanel() {
         description: createForm.description.trim() || undefined,
       });
       setCreateStatus({ loading: false, error: null, success: "Site saved" });
-      setSelectedSite(trimmedId);
+      setActiveSite(trimmedId, createForm.site_name.trim() || trimmedId);
       setCreateForm({ site_id: "", site_name: "", description: "" });
     } catch (err) {
       setCreateStatus({ loading: false, error: err.message || String(err), success: null });
@@ -85,13 +89,13 @@ export default function SitesPanel() {
   }
 
   const activeSite = useMemo(
-    () => sites.find((s) => s.site_id === selectedSite) || null,
-    [sites, selectedSite]
+    () => sites.find((s) => s.site_id === activeSiteId) || null,
+    [sites, activeSiteId]
   );
 
   useEffect(() => {
     let mounted = true;
-    if (!selectedSite) {
+    if (!activeSiteId) {
       setHosts([]);
       setAgents([]);
       return () => {
@@ -104,8 +108,8 @@ export default function SitesPanel() {
       setDetailError(null);
       try {
         const [siteHosts, siteAgents] = await Promise.all([
-          AtlasAPI.getSiteHosts(selectedSite),
-          AtlasAPI.getSiteAgents(selectedSite),
+          AtlasAPI.getSiteHosts(activeSiteId),
+          AtlasAPI.getSiteAgents(activeSiteId),
         ]);
         if (!mounted) return;
         setHosts(siteHosts);
@@ -122,10 +126,10 @@ export default function SitesPanel() {
     return () => {
       mounted = false;
     };
-  }, [selectedSite]);
+  }, [activeSiteId]);
 
   return (
-    <div className="h-full flex flex-col gap-4">
+    <div className="h-full flex flex-col gap-4 min-h-0 overflow-hidden">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-semibold">Remote Sites</h2>
@@ -142,7 +146,7 @@ export default function SitesPanel() {
         <div className="p-3 rounded bg-red-50 text-red-700 border border-red-200">{error}</div>
       )}
 
-      <section className="bg-white border border-gray-200 rounded-lg p-4">
+      <section className="bg-white border border-gray-200 rounded-lg p-4 shrink-0">
         <div className="flex items-center justify-between">
           <div>
             <h3 className="text-lg font-semibold">Register a site ahead of deployment</h3>
@@ -207,7 +211,7 @@ export default function SitesPanel() {
         </form>
       </section>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 overflow-y-auto max-h-60 pr-1">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 overflow-y-auto max-h-64 pr-1 shrink-0">
         {sites.length === 0 && !loading && (
           <div className="col-span-full border border-dashed rounded-lg p-6 bg-white">
             <div className="flex flex-col items-center text-center gap-3">
@@ -229,7 +233,7 @@ export default function SitesPanel() {
                   <br />
                   <span className="ml-6">-e ATLAS_CONTROLLER_URL=https://controller/api -e ATLAS_SITE_ID=branch-001 \</span>
                   <br />
-                  <span className="ml-6">-e ATLAS_AGENT_ID=edge01 atlas-agent`</span>
+                  <span className="ml-6">-e ATLAS_AGENT_INTERVAL=30m -e ATLAS_AGENT_ID=edge01 atlas-agent`</span>
                 </li>
                 <li>
                   <span className="font-medium text-gray-800">3.</span> Use `SCAN_SUBNETS="192.168.10.0/24"` if the auto-detected CIDR
@@ -241,18 +245,27 @@ export default function SitesPanel() {
                 <code className="mx-1">{"/api/sites/{site}/agents/{agent}/ingest"}</code>. Heartbeats show up here within a few
                 seconds of the first ingest.
               </p>
+              <p className="text-xs text-gray-500">
+                Remote agents stay running and default to a 15 minute loop. Override it with
+                <code className="mx-1">ATLAS_AGENT_INTERVAL=5m</code>
+                or add
+                <code className="mx-1">ATLAS_AGENT_ONCE=1</code>
+                to perform a single scan.
+              </p>
             </div>
           </div>
         )}
-        {sites.map((site) => (
-          <button
-            type="button"
-            key={site.site_id}
-            onClick={() => setSelectedSite(site.site_id)}
-            className={`text-left border rounded-lg p-4 shadow-sm transition hover:shadow-md ${
-              selectedSite === site.site_id ? "border-blue-500 bg-blue-50" : "border-gray-200 bg-white"
-            }`}
-          >
+        {sites.map((site) => {
+          const isActive = activeSiteId === site.site_id;
+          return (
+            <button
+              type="button"
+              key={site.site_id}
+              onClick={() => (isActive ? clearActiveSite() : setActiveSite(site.site_id, site.site_name))}
+              className={`text-left border rounded-lg p-4 shadow-sm transition hover:shadow-md ${
+                isActive ? "border-blue-500 bg-blue-50" : "border-gray-200 bg-white"
+              }`}
+            >
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm uppercase tracking-wide text-gray-500">{site.site_id}</p>
@@ -277,17 +290,22 @@ export default function SitesPanel() {
                 <dd>{relativeTime(site.last_seen)}</dd>
               </div>
             </dl>
-          </button>
-        ))}
+            </button>
+          );
+        })}
       </div>
 
-      <div className="flex-1 grid gap-4 md:grid-cols-5 min-h-0">
-        <section className="md:col-span-3 bg-white rounded-lg border border-gray-200 flex flex-col overflow-hidden">
+      <div className="flex-1 grid gap-4 md:grid-cols-5 min-h-0 overflow-hidden">
+        <section className="md:col-span-3 bg-white rounded-lg border border-gray-200 flex flex-col overflow-hidden min-h-0">
           <header className="p-4 border-b border-gray-100 flex items-center justify-between">
             <div>
               <h3 className="text-lg font-semibold">Hosts</h3>
               <p className="text-sm text-gray-500">
-                {activeSite ? `${activeSite.host_count} hosts at ${activeSite.site_name}` : "Select a site"}
+                {activeSite
+                  ? `${activeSite.host_count} hosts at ${activeSite.site_name}`
+                  : activeSiteId
+                    ? `Loading ${activeSiteName || activeSiteId}…`
+                    : "Select a site"}
               </p>
             </div>
             {detailLoading && <span className="text-xs text-gray-400">Loading…</span>}
@@ -339,7 +357,7 @@ export default function SitesPanel() {
                 {!hosts.length && (
                   <tr>
                     <td colSpan="4" className="text-center text-gray-500 py-6">
-                      {selectedSite ? "No hosts reported" : "Choose a site to inspect hosts"}
+                      {activeSiteId ? "No hosts reported" : "Choose a site to inspect hosts"}
                     </td>
                   </tr>
                 )}
@@ -348,7 +366,7 @@ export default function SitesPanel() {
           </div>
         </section>
 
-        <section className="md:col-span-2 bg-white rounded-lg border border-gray-200 flex flex-col">
+        <section className="md:col-span-2 bg-white rounded-lg border border-gray-200 flex flex-col min-h-0">
           <header className="p-4 border-b border-gray-100">
             <h3 className="text-lg font-semibold">Agents</h3>
             <p className="text-sm text-gray-500">{activeSite ? activeSite.site_id : "Select a site"}</p>
@@ -378,7 +396,7 @@ export default function SitesPanel() {
               ))}
               {!agents.length && (
                 <li className="p-4 text-sm text-gray-500">
-                  {selectedSite ? "No agents have reported in yet" : "Select a site"}
+                  {activeSiteId ? "No agents have reported in yet" : "Select a site"}
                 </li>
               )}
             </ul>

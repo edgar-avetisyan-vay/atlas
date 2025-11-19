@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState, useRef } from "react";
-import { apiGet } from "../api";
+import { AtlasAPI } from "../api";
+import { useSiteSource } from "../context/SiteSourceContext";
+import { remoteHostsToLegacyRows } from "../utils/remoteHosts";
 
 function ipToNum(ip) {
   const m = (ip || "").match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
@@ -206,21 +208,43 @@ function HostsTable({ showDuplicates = false, onClearPreset }) {
   const [density, setDensity] = useState("comfortable");
   const [filters, setFilters] = useState({});
   const [filteringCol, setFilteringCol] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const { activeSiteId, activeSiteName, clearActiveSite, isRemoteSource } = useSiteSource();
 
   useEffect(() => {
     let abort = false;
-    apiGet("/hosts")
-      .then((json) => {
-        if (abort) return;
-        const hostsRows = Array.isArray(json?.[0]) ? json[0] : [];
-        const dockerRows = Array.isArray(json?.[1]) ? json[1] : [];
-        setRaw({ hosts: hostsRows, docker: dockerRows });
-      })
-      .catch(() => {
-        if (!abort) setRaw({ hosts: [], docker: [] });
-      });
-    return () => { abort = true; };
-  }, []);
+
+    async function loadHosts() {
+      setLoading(true);
+      setError(null);
+      try {
+        if (activeSiteId) {
+          const remoteHosts = await AtlasAPI.getSiteHosts(activeSiteId);
+          if (abort) return;
+          setRaw({ hosts: remoteHostsToLegacyRows(remoteHosts), docker: [] });
+        } else {
+          const json = await AtlasAPI.getHosts();
+          if (abort) return;
+          const hostsRows = Array.isArray(json?.[0]) ? json[0] : [];
+          const dockerRows = Array.isArray(json?.[1]) ? json[1] : [];
+          setRaw({ hosts: hostsRows, docker: dockerRows });
+        }
+      } catch (err) {
+        if (!abort) {
+          setRaw({ hosts: [], docker: [] });
+          setError(err.message || String(err));
+        }
+      } finally {
+        if (!abort) setLoading(false);
+      }
+    }
+
+    loadHosts();
+    return () => {
+      abort = true;
+    };
+  }, [activeSiteId]);
 
   const columns = [
     "name",
@@ -432,6 +456,30 @@ function HostsTable({ showDuplicates = false, onClearPreset }) {
           </button>
         </div>
       </div>
+
+      <div className="mb-2 flex flex-wrap items-center gap-3 text-xs text-gray-600">
+        {isRemoteSource && activeSiteId ? (
+          <span>
+            Showing hosts reported by <span className="font-semibold">{activeSiteName || activeSiteId}</span>.
+            <button
+              type="button"
+              className="ml-2 text-blue-700 underline"
+              onClick={clearActiveSite}
+            >
+              Reset
+            </button>
+          </span>
+        ) : (
+          <span>Showing controller inventory</span>
+        )}
+        {loading && <span className="text-gray-400">Refreshing…</span>}
+      </div>
+
+      {error && (
+        <div className="mb-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {error}
+        </div>
+      )}
 
       <SortToolbar
         sortKey={sortKey}

@@ -8,6 +8,7 @@ import BuildTag from "./components/BuildTag";
 import MobileHeader from "./components/MobileHeader";
 import LoginModal from "./components/LoginModal";
 import SitesPanel from "./components/SitesPanel";
+import { useSiteSource } from "./context/SiteSourceContext";
 // Theme toggle removed per request
 
 const tabs = ["Network Map", "Hosts Table", "Sites", "Scripts", "Logs"];
@@ -181,6 +182,8 @@ export default function App() {
   const [sidebarVisible, setSidebarVisible] = useState(false);
   const [loginVisible, setLoginVisible] = useState(false);
   const [hostsShowDuplicates, setHostsShowDuplicates] = useState(false);
+  const { activeSiteId, activeSiteName, clearActiveSite, isRemoteSource } = useSiteSource();
+  const activeSiteLabel = activeSiteName || activeSiteId;
 
   const openLogin = () => setLoginVisible(true);
   const closeLogin = () => setLoginVisible(false);
@@ -223,6 +226,21 @@ export default function App() {
               </button>
             </div>
           </div>
+
+          {isRemoteSource && activeSiteLabel && (
+            <div className="mb-4 shrink-0 flex flex-wrap items-center gap-2 rounded border border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-900">
+              <span>
+                Showing remote data from <span className="font-semibold">{activeSiteLabel}</span>.
+              </span>
+              <button
+                type="button"
+                className="text-blue-800 underline decoration-dotted hover:text-blue-900"
+                onClick={clearActiveSite}
+              >
+                Reset to controller data
+              </button>
+            </div>
+          )}
 
           {/* Content area fills remaining height; individual tabs handle their own internal scroll */}
           <div className="w-full h-full flex-1 min-h-0">
