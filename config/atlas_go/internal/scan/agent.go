@@ -31,18 +31,22 @@ func RunRemoteAgent(cfg AgentConfig) error {
 		cfg.Interval = 15 * time.Minute
 	}
 	if cfg.ScanCommand == "" {
-		cfg.ScanCommand = "fastscan"
+		cfg.ScanCommand = "deepscan"
 	}
+
+	remoteOpts := RemotePayloadOptions{PrintJSON: cfg.PrintJSON, Config: cfg.Remote}
 
 	runOnce := func() error {
 		switch cfg.ScanCommand {
 		case "fastscan":
 			return FastScan(FastScanOptions{
 				SkipDB: true,
-				Remote: RemotePayloadOptions{
-					PrintJSON: cfg.PrintJSON,
-					Config:    cfg.Remote,
-				},
+				Remote: remoteOpts,
+			})
+		case "deepscan":
+			return DeepScan(DeepScanOptions{
+				SkipDB: true,
+				Remote: remoteOpts,
 			})
 		default:
 			return fmt.Errorf("remote agent does not support %s", cfg.ScanCommand)

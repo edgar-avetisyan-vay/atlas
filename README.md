@@ -14,45 +14,38 @@ This project is now maintained by the community instead of the original author. 
 - **Single container deployment** – build once, run anywhere with a couple of environment variables.
 
 ---
-## 🚀 Quick Start (local build only, zero registry dependency)
-Most contributors just want Atlas running locally without touching Docker Hub. Run the helper script that ships with this repo:
+## 🚀 Quick Start (script-driven only)
+Atlas now ships with a single script that handles both server and agent deployments. No manual `docker build`, `docker run`, or "power user" flow is required (or documented) anymore.
 
 ```bash
 chmod +x local-run.sh
-./local-run.sh
 ```
 
-The script:
-- writes `data/html/build-info.json` so the UI footer shows the build time,
-- builds a throwaway `atlas-local` image with BuildKit,
-- stops/replaces any existing `atlas-local` container, and
-- starts Atlas on host networking with the UI at `http://localhost:8884/` and the FastAPI docs at `http://localhost:8884/api/docs`.
-
-No registries, no pushes, no extra flags – rerun the script whenever you need a fresh copy.
-
-Ports default to `ATLAS_UI_PORT=8884` (proxied API) and `ATLAS_API_PORT=8885`. Override them only if they clash with another local service:
+### Server mode (controller only)
+Run the controller/UI without performing any local scans. This is the default mode.
 
 ```bash
-ATLAS_UI_PORT=9000 ATLAS_API_PORT=9001 ./local-run.sh
+./local-run.sh server
 ```
 
-If the browser only shows the stock NGINX welcome page, it usually means the container never started the FastAPI/React stack. Double-check that `local-run.sh` completed without errors and that no other service is already bound to the UI/API ports.
+The script writes `data/html/build-info.json`, builds a throwaway `atlas-local` image, replaces any `atlas-local` container, and launches the stack on host networking. Because the server stays in "listener" mode, it never touches the host network interfaces nor the Docker socket—remote agents feed it data instead. The UI lives at `http://localhost:8884/` (override with `ATLAS_UI_PORT`/`ATLAS_API_PORT`).
 
-### Handy environment knobs for local testing
-
-These are the only variables you typically touch while iterating:
+### Agent mode (deep scan + report)
+Remote agents are just as simple: export the controller details and run the same script in `agent` mode.
 
 ```bash
-FASTSCAN_INTERVAL=1800 \   # seconds between ARP sweeps
-DOCKERSCAN_INTERVAL=1800 \ # docker socket inventory refresh
-DEEPSCAN_INTERVAL=7200 \   # slower nmap-style passes
-SCAN_SUBNETS="192.168.1.0/24,10.0.0.0/24" \ # override auto-detected CIDRs
-  ./local-run.sh
+export ATLAS_CONTROLLER_URL="http://controller.example.com:8885/api"
+export ATLAS_SITE_ID="branch-001"
+export ATLAS_AGENT_ID="edge01"
+export ATLAS_AGENT_TOKEN="<api-token>"
+# Optional extras
+export ATLAS_SITE_NAME="Branch 001"
+export SCAN_SUBNETS="192.168.10.0/24"
+
+./local-run.sh agent
 ```
 
-Leave everything unset to let Atlas auto-detect local interfaces.
-
-The container starts the scheduler automatically. Use the UI Scripts panel or the API to re-trigger scans whenever you like.
+The helper builds the lightweight agent image (`Dockerfile.agent`), runs it with the required capabilities, and schedules recurring deep scans that immediately post their results to the controller. Agents never ship a UI or API—only the Go scanner binary plus its reporting loop.
 
 ---
 ## ⚙️ Environment Variables
@@ -60,10 +53,14 @@ The container starts the scheduler automatically. Use the UI Scripts panel or th
 | --- | --- | --- |
 | `ATLAS_UI_PORT` | Port NGINX listens on for the UI and proxied API | `8888` |
 | `ATLAS_API_PORT` | Port the FastAPI app listens on internally | `8889` |
+| `ATLAS_MODE` | `server` (UI/API only) or `agent` (headless deep scan). Set automatically by `local-run.sh`. | `server` |
+| `ATLAS_ENABLE_SCHEDULER` | Set to `1` to opt back into legacy on-box scans when running the server container manually. | `0` |
 | `FASTSCAN_INTERVAL` | Seconds between fast ARP/host scans | `3600` |
 | `DOCKERSCAN_INTERVAL` | Seconds between Docker inventory refreshes | `3600` |
 | `DEEPSCAN_INTERVAL` | Seconds between deeper Nmap-style scans | `7200` |
 | `SCAN_SUBNETS` | Optional comma-separated list of CIDRs to scan. Leave unset to auto-detect the local subnet. | _unset_ |
+
+> Scheduler-related knobs only matter if you run the server container with `ATLAS_ENABLE_SCHEDULER=1`. The default server mode keeps scanning disabled so only remote agents touch your networks.
 
 ### Remote controller & agent settings
 
@@ -73,53 +70,10 @@ The container starts the scheduler automatically. Use the UI Scripts panel or th
 | `ATLAS_SITE_ID` | Site identifier used when posting to `/sites/{site}/agents/{agent}/ingest` | _unset_ |
 | `ATLAS_SITE_NAME` | Optional friendly name shown in the controller UI | falls back to `ATLAS_SITE_ID` |
 | `ATLAS_AGENT_ID` | Unique agent identifier within the site | _unset_ |
-| `ATLAS_AGENT_VERSION` | Label included in ingest payloads (`atlas fastscan --agent-version v1.0.0`) | scanner build version |
+| `ATLAS_AGENT_VERSION` | Label included in ingest payloads (auto-populated from the scanner build version) | scanner build version |
 | `ATLAS_AGENT_TOKEN` | Bearer token that is attached as `Authorization: Bearer <token>` when posting to the controller | _unset_ |
-| `ATLAS_AGENT_INTERVAL` | Interval for `atlas agent` when running in container mode. Supports Go duration strings (`15m`, `1h`) or seconds. | `15m` |
+| `ATLAS_AGENT_INTERVAL` | Interval between deep scans when the agent loop runs. Supports Go duration strings (`15m`, `1h`) or seconds. | `15m` |
 | `ATLAS_AGENT_ONCE` | Set to `true`/`1` to run a single remote scan and exit | `false` |
-
----
-## 🛠️ Building the image yourself
-```bash
-git clone https://github.com/<your-org>/atlas.git
-cd atlas
-
-# Build the multi-stage Docker image (UI assets are compiled inside the Dockerfile)
-DOCKER_BUILDKIT=1 docker build -t atlas:dev .
-
-# Optionally provide UI metadata for the build tag
-DOCKER_BUILDKIT=1 docker build \
-  --build-arg UI_VERSION="1.2.3" \
-  --build-arg UI_COMMIT="$(git rev-parse --short HEAD)" \
-  --build-arg UI_BUILD_TIME="$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
-  -t atlas:dev .
-
-# Run your freshly built image (same flags as the quick start)
-docker run -d --name atlas --network host --cap-add NET_RAW --cap-add NET_ADMIN \
-  -v /var/run/docker.sock:/var/run/docker.sock atlas:dev
-```
-
-`config/scripts/write_build_info.sh` is a small helper that writes `build-info.json` files (used by the UI footer). Run it locally to update `data/html/build-info.json` for development, or let the container entrypoint run it at boot to stamp the production assets automatically.
-
-### 🔁 Offline-first helper script
-If you prefer a single workflow that stays completely inside this repository (no Docker Hub access required), use [`deploy.sh`](./deploy.sh):
-```bash
-chmod +x deploy.sh
-# Builds atlas-local:<timestamp>, runs it, and never tries to push anywhere
-./deploy.sh
-```
-By default the script:
-
-- Generates `data/html/build-info.json` locally so the UI footer has build metadata.
-- Builds a Docker image tagged as `atlas-local:<timestamp>` (override with `--image` or `IMAGE=...`).
-- Skips all network pushes so the image never leaves your workstation.
-- Stops/replaces the `atlas-dev` container so junior teammates can simply rerun the script to refresh their test instance.
-
-Power users can still opt-in to extra behaviour:
-
-- `./deploy.sh --version mytag --tag-latest --push` to restore the former release-style flow.
-- `./deploy.sh --skip-run` if you only want the image artefact.
-- `RUN_BACKUP=1 BACKUP_SCRIPT=/path/to/script.sh ./deploy.sh` for pre-deploy backups.
 
 ---
 ## 🧱 Architecture overview
@@ -139,7 +93,7 @@ atlas/
 
 Inside the container everything lives under `/config`:
 - `/config/bin/atlas` – Go scanner
-- `/config/scripts/atlas_check.sh` – entrypoint (initialises DB, schedules scans, launches FastAPI + NGINX)
+- `/config/scripts/atlas_check.sh` – entrypoint (initialises DB and launches FastAPI + NGINX; scheduling is opt-in)
 - `/config/nginx/default.conf.template` – rendered with the UI/API port env vars at runtime
 - `/config/db/atlas.db` – SQLite database generated when the container starts
 
@@ -147,33 +101,20 @@ Inside the container everything lives under `/config`:
 ## 🌐 Remote sites, agents & subnet scans
 Atlas can ingest data pushed from remote agents: `POST /api/sites/{site_id}/agents/{agent_id}/ingest`. The Sites tab in the UI stays empty until at least one site reports in, so use the workflow below to seed it.
 
-### 1. Build the lightweight agent image
+### Launch the lightweight agent with `local-run.sh`
 
-```bash
-docker build -f Dockerfile.agent -t atlas-agent .
-```
-
-### 2. Launch the remote agent next to the network you want to monitor
-
-```bash
-docker run -d --name atlas-agent \
-  --network host \
-  --cap-add NET_RAW --cap-add NET_ADMIN \
-  -e ATLAS_CONTROLLER_URL=https://controller.example.com/api \
-  -e ATLAS_SITE_ID=branch-001 \
-  -e ATLAS_SITE_NAME="Branch Office" \
-  -e ATLAS_AGENT_ID=edge01 \
-  -e ATLAS_AGENT_TOKEN=<api-token> \
-  -e SCAN_SUBNETS="192.168.10.0/24" \
-  atlas-agent
-```
+1. Export the controller/env variables (see the quick start section above).
+2. Run `./local-run.sh agent` from this repository.
+3. Tail `docker logs -f atlas-agent-local` (or your custom container name) to monitor deepscan progress and ingest responses.
 
 Important switches:
 - `ATLAS_CONTROLLER_URL` – points at the public controller UI/API that receives ingests.
 - `ATLAS_SITE_ID` / `ATLAS_SITE_NAME` – control how the site tile is labelled in the UI.
 - `ATLAS_AGENT_ID` – identifies each remote probe so you can track heartbeats.
 - `SCAN_SUBNETS` – comma-separated list of CIDRs to override auto-detection when the agent sits on a trunk port.
-- `ATLAS_AGENT_INTERVAL` / `ATLAS_AGENT_ONCE` – adjust how frequently `atlas agent` posts results.
+- `ATLAS_AGENT_INTERVAL` / `ATLAS_AGENT_ONCE` – adjust how frequently the deep scan loop reports back.
+
+Agents always perform full deep scans and immediately post their findings to the controller—no UI, scheduler, or local database is shipped in the agent container.
 
 ### 3. Dry-run scans or pipe JSON for automation
 
@@ -203,15 +144,15 @@ Once an agent ingests data the Sites panel shows the site name, total hosts, the
 It usually means the agent completed the local scan but never managed to post the ingest payload to the controller. Walk through the steps below to pinpoint the break:
 
 1. **Confirm the controller URL is valid.** The agent blindly POSTs to `ATLAS_CONTROLLER_URL`, so the value must be a real base API URL such as `http://10.1.255.110:8885/api`. Double check that you are not mixing schemes (`https://http://…`) or leaving out the controller’s port.
-2. **Tail both sets of logs.** `docker logs -f atlas-agent` should show the scan followed by `Posting payload to …` (or an HTTP error). On the controller side run `docker logs -f atlas-local` and watch for `POST /api/sites/.../ingest` entries or FastAPI tracebacks. If the controller never logs the ingest route the request is not reaching it.
+2. **Tail both sets of logs.** `docker logs -f atlas-agent-local` (or your agent container name) should show the scan followed by `Posting payload to …` (or an HTTP error). On the controller side run `docker logs -f atlas-local` and watch for `POST /api/sites/.../ingest` entries or FastAPI tracebacks. If the controller never logs the ingest route the request is not reaching it.
 3. **Validate reachability from the agent host.** Run `curl -v http://10.1.255.110:8885/api/health` (swap the scheme/port for your deployment) from the same machine that hosts the agent container. Successful output proves routing, DNS, and certificates are correct.
 4. **Check site/agent identifiers.** The controller discards payloads whose `{site_id, agent_id}` do not match an existing site/agent pair. Make sure the IDs in the agent env vars are exactly the ones you created via the UI/API (case sensitive, no extra whitespace).
 5. **Authenticate if required.** If your controller enforces auth, export `ATLAS_AGENT_TOKEN` and verify the token issuer expects a `Bearer` header. 401/403 responses in the agent logs almost always point to a missing/invalid token.
 
 Running the agent and controller on the same host is supported as long as the controller URL points back to the host network (usually `http://127.0.0.1:<api-port>/api` or the host’s LAN IP). Once the ingest succeeds the Sites tile updates immediately, and “Last Seen” matches the agent’s heartbeat interval.
 - **UI doesn’t load on 8888?** Override `ATLAS_UI_PORT` (e.g. `-e ATLAS_UI_PORT=8884`) and make sure the host firewall allows the port you choose.
-- **Empty response / no network data?** Give the container `--network host` plus both `NET_RAW` and `NET_ADMIN` capabilities so ARP and Docker scans work. Without them the backend has nothing to display.
-- **Rebuild React UI** simply by running `docker build` – the `ui-builder` stage now runs `npm ci && npm run build` automatically.
+- **Empty response / no network data?** Agents must run with `--network host` plus both `NET_RAW` and `NET_ADMIN` so their deep scans can reach the LAN. `./local-run.sh agent` already sets these flags; copy them if you customize the runtime.
+- **Need a fresh React UI build?** Rerun `./local-run.sh server`. The Dockerfile rebuilds the React assets automatically on every invocation.
 
 ---
 ## 📄 License

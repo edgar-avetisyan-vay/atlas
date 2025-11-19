@@ -28,6 +28,12 @@ type HostInfo struct {
 	InterfaceName string
 }
 
+// DeepScanOptions controls how deep scans persist and emit data.
+type DeepScanOptions struct {
+	SkipDB bool
+	Remote RemotePayloadOptions
+}
+
 // Try NetBIOS (nbtscan) for hostname resolution
 func getNetBIOSName(ip string) string {
 	out, err := exec.Command("nbtscan", ip).Output()
@@ -206,7 +212,7 @@ func getMacAddress(ip string) string {
 	return "Unknown"
 }
 
-func DeepScan() error {
+func DeepScan(opts DeepScanOptions) error {
 	// Get all network interfaces
 	interfaces, err := utils.GetAllInterfaces()
 	if err != nil {
@@ -241,21 +247,25 @@ func DeepScan() error {
 	total := len(hostInfos)
 	fmt.Fprintf(lf, "Total discovered: %d hosts in %s\n", total, time.Since(startTime))
 
-	dbPath := "/config/db/atlas.db"
-	db, err := sql.Open("sqlite3", dbPath)
-	if err != nil {
-		fmt.Fprintf(lf, "Failed to open DB: %v\n", err)
-		return err
-	}
-	defer db.Close()
+	var db *sql.DB
+	if !opts.SkipDB {
+		dbPath := "/config/db/atlas.db"
+		db, err = sql.Open("sqlite3", dbPath)
+		if err != nil {
+			fmt.Fprintf(lf, "Failed to open DB: %v\n", err)
+			return err
+		}
+		defer db.Close()
 
-	// Mark all hosts as offline before scanning
-	_, err = db.Exec("UPDATE hosts SET online_status = 'offline'")
-	if err != nil {
-		fmt.Fprintf(lf, "Failed to mark hosts as offline: %v\n", err)
+		// Mark all hosts as offline before scanning
+		if _, err := db.Exec("UPDATE hosts SET online_status = 'offline'"); err != nil {
+			fmt.Fprintf(lf, "Failed to mark hosts as offline: %v\n", err)
+		}
 	}
 
 	var wg sync.WaitGroup
+	var remoteBatch []HostRecord
+	var batchMu sync.Mutex
 	for idx, host := range hostInfos {
 		wg.Add(1)
 		go func(idx int, host HostInfo) {
@@ -293,14 +303,22 @@ func DeepScan() error {
 					"scanner": "deepscan",
 				},
 			}
-			if err := upsertHost(db, record); err != nil {
-				fmt.Fprintf(lf, "❌ Update failed for %s on interface %s: %v\n", ip, host.InterfaceName, err)
+			if db != nil {
+				if err := upsertHost(db, record); err != nil {
+					fmt.Fprintf(lf, "❌ Update failed for %s on interface %s: %v\n", ip, host.InterfaceName, err)
+				}
 			}
+			batchMu.Lock()
+			remoteBatch = append(remoteBatch, record)
+			batchMu.Unlock()
 			fmt.Fprintf(lf, "Host %s scanned in %s\n", ip, time.Since(hostStart))
 		}(idx, host)
 	}
 	wg.Wait()
 
 	fmt.Fprintf(lf, "Deep scan complete in %s\n", time.Since(startTime))
+	if err := emitHosts(remoteBatch, opts.Remote); err != nil {
+		return err
+	}
 	return nil
 }

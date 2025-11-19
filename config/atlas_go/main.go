@@ -44,7 +44,7 @@ func main() {
 		fmt.Println("✅ Docker scan complete.")
 	case "deepscan":
 		fmt.Println("🚀 Running deep scan...")
-		if err := scan.DeepScan(); err != nil {
+		if err := scan.DeepScan(scan.DeepScanOptions{}); err != nil {
 			log.Fatalf("❌ Deep scan failed: %v", err)
 		}
 		fmt.Println("✅ Deep scan complete.")
@@ -110,7 +110,6 @@ func parseAgentConfig(args []string) (scan.AgentConfig, error) {
 	remoteFlags := bindRemoteFlags(fs)
 	interval := fs.Duration("interval", envDuration("ATLAS_AGENT_INTERVAL", 15*time.Minute), "interval between scans (e.g. 15m or seconds)")
 	once := fs.Bool("once", envBool("ATLAS_AGENT_ONCE", false), "run a single scan and exit")
-	scanType := fs.String("scan", getenvDefault("ATLAS_AGENT_SCAN", "fastscan"), "scan command to execute (fastscan)")
 	if err := fs.Parse(args); err != nil {
 		return scan.AgentConfig{}, err
 	}
@@ -123,7 +122,7 @@ func parseAgentConfig(args []string) (scan.AgentConfig, error) {
 		Interval:    *interval,
 		Once:        *once,
 		PrintJSON:   remoteOpts.PrintJSON,
-		ScanCommand: *scanType,
+		ScanCommand: "deepscan",
 	}, nil
 }
 
