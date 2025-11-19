@@ -130,8 +130,9 @@ export default function SitesPanel() {
         <div>
           <h2 className="text-2xl font-semibold">Remote Sites</h2>
           <p className="text-gray-600">
-            Multi-agent ingestion overview. Deploy the Go scanner remotely and POST to the new
-            /sites/{{site}}/agents/{{agent}}/ingest endpoint to populate this dashboard.
+            Multi-agent ingestion overview. Deploy the Go scanner remotely and POST to the
+            <code className="mx-1">{"/sites/{site}/agents/{agent}/ingest"}</code>
+            endpoint to populate this dashboard.
           </p>
         </div>
         {loading && <span className="text-sm text-gray-500">Refreshing…</span>}
@@ -190,7 +191,11 @@ export default function SitesPanel() {
             />
           </label>
           <div className="md:col-span-2 flex items-center justify-between text-xs text-gray-500">
-            <p>Agents should target `/api/sites/{{site}}/agents/{{agent}}/ingest` with the Site ID shown here.</p>
+            <p>
+              Agents should target
+              <code className="mx-1">{"/api/sites/{site}/agents/{agent}/ingest"}</code>
+              with the Site ID shown here.
+            </p>
             <button
               type="submit"
               className="inline-flex items-center rounded bg-blue-600 px-4 py-2 text-white text-sm font-semibold disabled:opacity-50"
@@ -232,8 +237,9 @@ export default function SitesPanel() {
                 </li>
               </ol>
               <p className="text-xs text-gray-500">
-                Agents post to `/api/sites/{{site}}/agents/{{agent}}/ingest`. Heartbeats show up here within a few seconds of the
-                first ingest.
+                Agents post to
+                <code className="mx-1">{"/api/sites/{site}/agents/{agent}/ingest"}</code>. Heartbeats show up here within a few
+                seconds of the first ingest.
               </p>
             </div>
           </div>
