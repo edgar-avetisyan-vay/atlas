@@ -31,73 +31,30 @@ Atlas performs three key functions:
 
 ---
 
-## 🖼️ Screenshots
+## 🧑‍💻 Getting Started (Local Development)
 
-### 🖥️ Desktop View
+Use this quick-start checklist whenever you begin working on Atlas locally:
 
-<table>
-<tr>
-<td width="50%">
-<a href="screenshots/dashboard_big_c.png" target="_blank">
-<img src="screenshots/dashboard_big_c.png" alt="Dashboard - Collapsed Layout" style="border: 2px solid #ddd; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);" />
-<p align="center"><em>Dashboard - Circular Layout</em></p>
-</a>
-</td>
-<td width="50%">
-<a href="screenshots/dashboard_big_h.png" target="_blank">
-<img src="screenshots/dashboard_big_h.png" alt="Dashboard - Horizontal Layout" style="border: 2px solid #ddd; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);" />
-<p align="center"><em>Dashboard - Hierarchical Layout</em></p>
-</a>
-</td>
-</tr>
-<tr>
-<td width="50%">
-<a href="screenshots/table_big.png" target="_blank">
-<img src="screenshots/table_big.png" alt="Hosts Table View" style="border: 2px solid #ddd; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);" />
-<p align="center"><em>Hosts Table View</em></p>
-</a>
-</td>
-<td width="50%">
-<a href="screenshots/logs_big.png" target="_blank">
-<img src="screenshots/logs_big.png" alt="Logs Panel" style="border: 2px solid #ddd; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);" />
-<p align="center"><em>Logs Panel</em></p>
-</a>
-</td>
-</tr>
-</table>
+1. **Clone and enter the repo**
+   ```bash
+   git clone https://github.com/<your-org>/atlas.git
+   cd atlas
+   ```
+2. **Install frontend dependencies (optional but recommended)**
+   ```bash
+   cd data/react-ui
+   npm install
+   npm run dev   # live preview on http://localhost:5173
+   ```
+   The Docker image build now runs `npm run build` automatically inside the container, so you only need this step when
+   iterating on the React UI locally.
+3. **Build the container image**
+   ```bash
+   docker build -t atlas:dev .
+   ```
+4. **Run the stack** – Start the image with the environment variables described below (or reuse the sample `docker run` command). The UI becomes available on `http://localhost:8888/` and the FastAPI docs at `http://localhost:8888/api/docs`.
 
-### 📱 Mobile View
-
-<table>
-<tr>
-<td width="25%" align="center">
-<a href="screenshots/dashboard_small_c.png" target="_blank">
-<img src="screenshots/dashboard_small_c.png" alt="Mobile Dashboard - Collapsed" style="border: 2px solid #ddd; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); max-width: 250px;" />
-<p align="center"><em>Dashboard - Collapsed</em></p>
-</a>
-</td>
-<td width="25%" align="center">
-<a href="screenshots/dashboard_small_h.png" target="_blank">
-<img src="screenshots/dashboard_small_h.png" alt="Mobile Dashboard - Horizontal" style="border: 2px solid #ddd; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); max-width: 250px;" />
-<p align="center"><em>Dashboard - Horizontal</em></p>
-</a>
-</td>
-<td width="25%" align="center">
-<a href="screenshots/table_small.png" target="_blank">
-<img src="screenshots/table_small.png" alt="Mobile Hosts Table" style="border: 2px solid #ddd; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); max-width: 250px;" />
-<p align="center"><em>Hosts Table</em></p>
-</a>
-</td>
-<td width="25%" align="center">
-<a href="screenshots/logs_small.png" target="_blank">
-<img src="screenshots/logs_small.png" alt="Mobile Logs Panel" style="border: 2px solid #ddd; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); max-width: 250px;" />
-<p align="center"><em>Logs Panel</em></p>
-</a>
-</td>
-</tr>
-</table>
-
-> 💡 **Tip:** Click on any screenshot to view the full-size image
+Re-running steps 3–4 ensures you are always working from the latest container image (the UI build happens inside the Dockerfile).
 
 ---
 
@@ -120,6 +77,10 @@ docker run -d \
   -e SCAN_SUBNETS="192.168.1.0/24,10.0.0.0/24" \
   keinstien/atlas:latest
 ```
+
+> **Tip:** `keinstien/atlas:latest` tracks the most recent published release. If you want to test features that you just
+> built locally (for example, the multi-site "Sites" tab), run `docker build -t atlas:dev .` and substitute `atlas:dev` in
+> the command above.
 
 **Environment Variables:**
 - `ATLAS_UI_PORT` – Sets the port for the Atlas UI (Nginx). Default: 8888.
@@ -163,10 +124,50 @@ The scheduler starts automatically when the container starts and runs scans in t
   - Serves:
     - `/api/hosts` – all discovered hosts (regular + Docker)
     - `/api/external` – external IP and metadata
+    - `/api/sites/summary` – aggregated view of remote sites/agents pushing data into Atlas
+    - `/api/sites/{site_id}/agents|hosts` – detail views for multi-site ingestion
+  - Accepts authenticated network data pushes (mTLS/headers handled at the proxy) through
+    `POST /api/sites/{site_id}/agents/{agent_id}/ingest`, enabling lightweight agents deployed
+    to branch offices or VPCs to stream host observations back to the controller.
 
 - **NGINX**
   - Serves frontend (React static build) on `port 8888`
   - Proxies API requests (`/api/`) to FastAPI (`localhost:8889`)
+
+---
+
+## 🌐 Remote Sites & Agents
+
+Atlas now ships with a lightweight multi-site ingestion plane so you can deploy the Go scanner
+as a remote agent and roll its findings up to a central controller:
+
+1. **Deploy an agent** (Docker/systemd) to every subnet you care about. Run the existing `atlas`
+   binary on a schedule and serialize scan results to JSON.
+2. **POST your findings** to the controller: `POST /api/sites/{site_id}/agents/{agent_id}/ingest`
+   with a payload shaped like:
+
+   ```json
+   {
+     "site_name": "dublin-edge",
+     "agent_version": "1.4.0",
+     "hosts": [
+       {
+         "ip": "10.42.0.12",
+         "hostname": "fw-1",
+         "os": "FortiOS",
+         "ports": [{"port": 22, "protocol": "tcp", "service": "ssh"}]
+       }
+     ]
+   }
+   ```
+
+3. **Review aggregated state** through the new **Sites** tab in the React UI or the API endpoints:
+   - `GET /api/sites/summary` → counts + timestamps per site
+   - `GET /api/sites/{site_id}/hosts` → normalized host inventory
+   - `GET /api/sites/{site_id}/agents` → heartbeat + version metadata
+
+These additions provide the foundation for centrally-managed deployments without removing the
+original single-host scanning workflow.
 
 ---
 
@@ -182,7 +183,7 @@ atlas/
 │   ├── db/              # SQLite file created on runtime
 │   ├── logs/            # Uvicorn logs
 │   ├── nginx/           # default.conf for port 8888
-│   └── scripts/         # startup shell scripts
+│   └── scripts/         # FastAPI app + scheduler
 ├── data/
 │   ├── html/            # Static files served by Nginx
 │   └── react-ui/        # Frontend source (React)
@@ -211,19 +212,19 @@ This is a new React-based UI.
 ### 🛠️ Setup and Build
 
 ```bash
-cd /swarm/data/atlas/react-ui
+cd data/react-ui
 npm install
 npm run build
 ```
 
 The built output will be in:
 ```
-/swarm/data/atlas/react-ui/dist/
+data/react-ui/dist/
 ```
 
-For development CI/CD (for UI and backend anf build a new docker version):
+For development CI/CD (build the UI, backend, and Docker image):
 ```bash
-/swarm/github-repos/atlas/deploy.sh
+./deploy.sh
 ```
 
 
@@ -234,7 +235,7 @@ To deploy a new version and upload it to Docker Hub, use the provided CI/CD scri
 1. Build and publish a new image:
 
    ```bash
-   /swarm/github-repos/atlas/deploy.sh
+   ./deploy.sh
    ```
 
    - The script will prompt you for a version tag (e.g. `v3.2`).
@@ -262,12 +263,10 @@ To deploy a new version and upload it to Docker Hub, use the provided CI/CD scri
 ## 🌍 URLs
 
 - **Swagger API docs:**
-  - `🌍 http://localhost:8888/api/docs` (Host Data API endpoint)
+  - `🌍 http://localhost:8888/api/docs`
 
-- **Frontend UI:**
-  - `🖥️ UI	http://localhost:8888/` (main dashboard)
-  - `📊 http://localhost:8888/hosts.html` (Hosts Table)
-  - `🧪 http://localhost:8888/visuals/vis.js_node_legends.html` (legacy test UI)
+- **Frontend UI (React SPA):**
+  - `🖥️ http://localhost:8888/`
 
 > Default exposed port is: `8888`
 
@@ -316,16 +315,16 @@ curl http://localhost:8888/api/scheduler/status
 ## 📌 Dev Tips
 
 To edit Go logic:
-- Main binary: `internal/scan/`
-- Commands exposed via: `main.go`
+- Main packages: `config/atlas_go/internal/scan/`
+- Commands exposed via: `config/atlas_go/main.go`
 
 To edit API:
-- Python FastAPI app: `scripts/app.py`
+- Python FastAPI app: `config/scripts/app.py`
 
 To edit UI:
-- Modify React app under `/react-ui`
-- Rebuild and copy static files to `/html`
-- _automated deplolyment and publish to dockerhub using the script deploy.sh_
+- Modify the React app under `data/react-ui`
+- Rebuild with `npm run build` to refresh `data/react-ui/dist`
+- Use `./deploy.sh` to copy the build output into the container image and push to Docker Hub
 ---
 
 ## ⚙️ Automation Notes
@@ -334,7 +333,7 @@ To edit UI:
 - All Go scan tasks run sequentially:
    - `initdb → fastscan → deepscan → dockerscan`
 
-- Scheduled scans are run every 30 minutes via Go timers.
+- Scheduled scans follow the intervals defined by `FASTSCAN_INTERVAL`, `DOCKERSCAN_INTERVAL`, and `DEEPSCAN_INTERVAL` (defaults: 3600s/3600s/7200s).
 
 - No cron dependency required inside the container.
 

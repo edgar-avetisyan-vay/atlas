@@ -136,6 +136,9 @@ export const AtlasAPI = {
   getLog: (filename) => apiGet(`/logs/${encodeURIComponent(filename)}`),
   lastScanStatus: () => apiGet("/scripts/last-scan-status"),
   health: () => apiGet("/health"),
+  getSiteSummary: () => apiGet("/sites/summary"),
+  getSiteHosts: (siteId) => apiGet(`/sites/${encodeURIComponent(siteId)}/hosts`),
+  getSiteAgents: (siteId) => apiGet(`/sites/${encodeURIComponent(siteId)}/agents`),
 };
 
 // Composite health (API + optional UI healthz)

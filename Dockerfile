@@ -1,4 +1,19 @@
-# Stage 1: Build Go binary
+# Stage 1: Build React UI assets
+FROM node:20 AS ui-builder
+WORKDIR /ui
+
+# Install dependencies first to leverage layer caching
+COPY data/react-ui/package*.json ./
+RUN npm ci
+
+# Copy the rest of the UI source + fallback build-info reference
+COPY data/react-ui/ ./
+COPY data/html/ html/
+
+# Produce the production build (Vite emits to /ui/dist)
+RUN npm run build
+
+# Stage 2: Build Go binary
 FROM golang:1.25.3 AS builder
 WORKDIR /app
 COPY config/atlas_go /app
@@ -21,7 +36,9 @@ RUN rm -f /etc/nginx/conf.d/default.conf /etc/nginx/sites-enabled/default || tru
 
 # Copy template & static UI content
 COPY config/nginx/default.conf.template /config/nginx/default.conf.template
-COPY data/html/ /usr/share/nginx/html/
+COPY --from=ui-builder /ui/dist/ /usr/share/nginx/html/
+# Ship build-info.json (used by the React UI build tag)
+COPY data/html/build-info.json /usr/share/nginx/html/build-info.json
 
 # Copy scripts and binary
 COPY config/scripts /config/scripts
