@@ -16,7 +16,7 @@ This project is now maintained by the community instead of the original author. 
 ---
 ## 🚀 Quick Start (pull & run)
 ```bash
-# 1. Pull the latest published image
+# 1. Pull the latest published image (skip this step if you want to stay 100% offline and build locally)
 docker pull atlasproject/atlas:latest
 
 # 2. Run it (requires host networking + NET_RAW/NET_ADMIN so the scanner can talk to the LAN)
@@ -87,17 +87,25 @@ docker run -d --name atlas --network host --cap-add NET_RAW --cap-add NET_ADMIN 
 
 `config/scripts/write_build_info.sh` is a small helper that writes `build-info.json` files (used by the UI footer). Run it locally to update `data/html/build-info.json` for development, or let the container entrypoint run it at boot to stamp the production assets automatically.
 
-### 🔁 End-to-end helper script
-If you prefer a single guided workflow that writes `data/html/build-info.json`, builds/tags/pushes the Docker image, and runs the container, use [`deploy.sh`](./deploy.sh):
+### 🔁 Offline-first helper script
+If you prefer a single workflow that stays completely inside this repository (no Docker Hub access required), use [`deploy.sh`](./deploy.sh):
 ```bash
 chmod +x deploy.sh
-# Defaults to atlasproject/atlas; override with --image or IMAGE=my-registry/atlas
+# Builds atlas-local:<timestamp>, runs it, and never tries to push anywhere
 ./deploy.sh
 ```
-The script prompts for the version tag, whether to tag as `latest`, and whether to push to Docker Hub. It also cleans up any old `atlas-dev` container before starting the new one. Optional hooks:
+By default the script:
 
-- Override the container registry by passing `--image ghcr.io/my-org/atlas` (or exporting `IMAGE=...`).
-- Run a custom backup command by exporting `RUN_BACKUP=1 BACKUP_SCRIPT=/path/to/script.sh`.
+- Generates `data/html/build-info.json` locally so the UI footer has build metadata.
+- Builds a Docker image tagged as `atlas-local:<timestamp>` (override with `--image` or `IMAGE=...`).
+- Skips all network pushes so the image never leaves your workstation.
+- Stops/replaces the `atlas-dev` container so junior teammates can simply rerun the script to refresh their test instance.
+
+Power users can still opt-in to extra behaviour:
+
+- `./deploy.sh --version mytag --tag-latest --push` to restore the former release-style flow.
+- `./deploy.sh --skip-run` if you only want the image artefact.
+- `RUN_BACKUP=1 BACKUP_SCRIPT=/path/to/script.sh ./deploy.sh` for pre-deploy backups.
 
 ---
 ## 🧱 Architecture overview
