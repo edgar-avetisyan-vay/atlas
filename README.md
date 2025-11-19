@@ -48,6 +48,7 @@ Use this quick-start checklist whenever you begin working on Atlas locally:
    ```
    The Docker image build now runs `npm run build` automatically inside the container, so you only need this step when
    iterating on the React UI locally.
+
 3. **Build the container image**
    ```bash
    docker build -t atlas:dev .
@@ -55,6 +56,7 @@ Use this quick-start checklist whenever you begin working on Atlas locally:
 4. **Run the stack** – Start the image with the environment variables described below (or reuse the sample `docker run` command). The UI becomes available on `http://localhost:8888/` and the FastAPI docs at `http://localhost:8888/api/docs`.
 
 Re-running steps 3–4 ensures you are always working from the latest container image (the UI build happens inside the Dockerfile).
+
 
 ---
 
