@@ -9,6 +9,8 @@ ARG UI_COMMIT
 ARG UI_BUILD_TIME
 WORKDIR /ui
 COPY data/react-ui/ ./
+# Include fallback build metadata referenced by the UI build.
+COPY data/html ./html
 RUN npm ci
 RUN npm run build
 
