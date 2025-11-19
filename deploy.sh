@@ -9,7 +9,7 @@ SCRIPT_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "$0")"
 if [[ -z "${ATLAS_IN_SG:-}" ]]; then
   if command -v id >/dev/null 2>&1 && id -nG 2>/dev/null | grep -qw docker; then
     echo "✅ Docker group already present; continuing..."
-  elif command -v sg >/dev/null 2>&1; then
+  elif command -v sg >/dev/null 2>&1 && getent group docker >/dev/null 2>&1; then
     echo "🔄 Syncing docker group membership..."
     # Reconstruct quoted args safely
     QUOTED_ARGS=()
@@ -19,7 +19,7 @@ if [[ -z "${ATLAS_IN_SG:-}" ]]; then
     CMD="ATLAS_IN_SG=1 \"$SCRIPT_PATH\" ${QUOTED_ARGS[*]}"
     exec sg docker -c "$CMD"
   else
-    echo "⚠️ 'sg' command not available; proceeding without group switch"
+    echo "⚠️ 'docker' group not available; proceeding without group switch"
   fi
 else
   echo "✅ Running under docker group context"
@@ -30,24 +30,36 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HTML_DIR="${REPO_ROOT}/data/html"
 
 BUILD_INFO_SCRIPT="${REPO_ROOT}/config/scripts/write_build_info.sh"
-IMAGE="keinstien/atlas"
-CONTAINER_NAME="atlas-dev"
-if [[ -f "$HTML_DIR/build-info.json" ]]; then
-  CURRENT_VERSION=$(awk -F'"' '{print $4}' "$HTML_DIR/build-info.json")
-else
-  CURRENT_VERSION="unknown"
-fi
+IMAGE_DEFAULT="atlas-local"
+IMAGE="${IMAGE:-$IMAGE_DEFAULT}"
+CONTAINER_NAME="${CONTAINER_NAME:-atlas-dev}"
 
 usage() {
   cat <<EOF
-Usage: ./deploy.sh [--image my-registry/atlas]
+Usage: ./deploy.sh [options]
+
+Options:
+  --image <name>       Override the container image (default: ${IMAGE_DEFAULT})
+  --version <tag>      Override the version tag (default: local-YYYYMMDDHHMMSS)
+  --tag-latest         Also tag the image as :latest
+  --push               Push the built image to the configured registry (disabled by default)
+  --skip-run           Build/tag only; skip starting the container
+  -h, --help           Show this help message
 
 Environment overrides:
-  IMAGE           Override the container image (default: ${IMAGE_DEFAULT})
-  RUN_BACKUP=1    Enable backup hook
-  BACKUP_SCRIPT   Executable script to run when RUN_BACKUP=1
+  IMAGE                Same as --image
+  VERSION              Same as --version
+  CONTAINER_NAME       Name for the runtime container (default: atlas-dev)
+  RUN_BACKUP=1         Enable backup hook
+  BACKUP_SCRIPT        Executable script to run when RUN_BACKUP=1
 EOF
 }
+
+VERSION_DEFAULT="local-$(date +%Y%m%d%H%M%S)"
+VERSION="${VERSION:-$VERSION_DEFAULT}"
+DO_LATEST=false
+DO_PUSH=false
+RUN_CONTAINER=true
 
 PARSED_ARGS=()
 while [[ $# -gt 0 ]]; do
@@ -59,6 +71,26 @@ while [[ $# -gt 0 ]]; do
       fi
       IMAGE="$2"
       shift 2
+      ;;
+    --version)
+      if [[ -z "${2:-}" ]]; then
+        echo "❌ --version requires a value"
+        exit 1
+      fi
+      VERSION="$2"
+      shift 2
+      ;;
+    --tag-latest)
+      DO_LATEST=true
+      shift
+      ;;
+    --push)
+      DO_PUSH=true
+      shift
+      ;;
+    --skip-run)
+      RUN_CONTAINER=false
+      shift
       ;;
     -h|--help)
       usage
@@ -74,34 +106,15 @@ set -- "${PARSED_ARGS[@]}"
 
 echo "📁 Repo root: $REPO_ROOT"
 echo "🗂️  HTML dir:   $HTML_DIR"
-
-# Prompt for version (allow env override)
-if [[ -z "${VERSION:-}" ]]; then
-  read -p "👉 Enter the version tag (current version: $CURRENT_VERSION): " VERSION
+echo "🏷️  Version:    $VERSION"
+echo "🐳 Image:      $IMAGE"
+if $DO_LATEST; then
+  echo "🔁 Will also tag :latest"
 fi
-if [[ -z "${VERSION:-}" ]]; then
-  echo "❌ Version tag is required. Exiting..."
-  exit 1
-fi
-
-# Ask whether to also tag this version as 'latest' (allow env override)
-if [[ -z "${TAG_LATEST:-}" ]]; then
-  read -p "👉 Tag this version as 'latest' as well? (y/N): " TAG_LATEST
-fi
-if [[ "${TAG_LATEST:-}" =~ ^([yY][eE][sS]|[yY])$ ]]; then
-  DO_LATEST=true
+if $DO_PUSH; then
+  echo "📤 Push enabled (requires registry access)"
 else
-  DO_LATEST=false
-fi
-
-# Ask whether to push this version to Docker Hub (allow env override via PUSH_D or DO_PUSH)
-if [[ -z "${PUSH_D:-}" && -z "${DO_PUSH:-}" ]]; then
-  read -p "👉 Push this version to Docker Hub? (y/N): " PUSH_D
-fi
-if [[ "${PUSH_D:-}" =~ ^([yY][eE][sS]|[yY])$ || "${DO_PUSH:-}" =~ ^([tT][rR][uU][eE]|[yY][eE][sS]|[yY])$ ]]; then
-  DO_PUSH=true
-else
-  DO_PUSH=false
+  echo "📥 Push disabled — build remains local to this repo"
 fi
 
 # Sanity checks
@@ -168,17 +181,21 @@ else
   fi
 fi
 
-# Step 7: Run new container
-echo "🚀 Deploying container..."
-docker run -d \
-  --name "$CONTAINER_NAME" \
-  --network=host \
-  --cap-add=NET_RAW \
-  --cap-add=NET_ADMIN \
-  -e ATLAS_UI_PORT=8884 \
-  -e ATLAS_API_PORT=8885 \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  "$IMAGE:$VERSION"
+if $RUN_CONTAINER; then
+  # Step 7: Run new container
+  echo "🚀 Deploying container..."
+  docker run -d \
+    --name "$CONTAINER_NAME" \
+    --network=host \
+    --cap-add=NET_RAW \
+    --cap-add=NET_ADMIN \
+    -e ATLAS_UI_PORT=8884 \
+    -e ATLAS_API_PORT=8885 \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    "$IMAGE:$VERSION"
+else
+  echo "⏭️ Skipping container run (per --skip-run)"
+fi
 
 if $DO_LATEST; then
   echo "✅ Deployment complete for version: $VERSION (also tagged as latest)"
