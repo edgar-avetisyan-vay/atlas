@@ -1,3 +1,17 @@
+# Stage 0: Build React UI (Vite)
+ARG UI_VERSION="dev"
+ARG UI_COMMIT="unknown"
+ARG UI_BUILD_TIME=""
+
+FROM node:20 AS ui-builder
+ARG UI_VERSION
+ARG UI_COMMIT
+ARG UI_BUILD_TIME
+WORKDIR /ui
+COPY data/react-ui/ ./
+RUN npm ci
+RUN npm run build
+
 # Stage 1: Build Go binary
 FROM golang:1.25.3 AS builder
 WORKDIR /app
@@ -8,6 +22,12 @@ RUN go build -o atlas .
 
 # Stage 2: Runtime
 FROM python:3.11-slim
+ARG UI_VERSION
+ARG UI_COMMIT
+ARG UI_BUILD_TIME
+ENV ATLAS_UI_VERSION=${UI_VERSION}
+ENV ATLAS_UI_COMMIT=${UI_COMMIT}
+ENV ATLAS_UI_BUILT_AT=${UI_BUILD_TIME}
 
 RUN apt-get update && \
     apt-get install -y \
@@ -21,7 +41,7 @@ RUN rm -f /etc/nginx/conf.d/default.conf /etc/nginx/sites-enabled/default || tru
 
 # Copy template & static UI content
 COPY config/nginx/default.conf.template /config/nginx/default.conf.template
-COPY data/html/ /usr/share/nginx/html/
+COPY --from=ui-builder /ui/dist/ /usr/share/nginx/html/
 
 # Copy scripts and binary
 COPY config/scripts /config/scripts
