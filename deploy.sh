@@ -28,6 +28,7 @@ fi
 # Resolve repo root from this script's location
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HTML_DIR="${REPO_ROOT}/data/html"
+
 BUILD_INFO_SCRIPT="${REPO_ROOT}/config/scripts/write_build_info.sh"
 IMAGE="keinstien/atlas"
 CONTAINER_NAME="atlas-dev"
@@ -36,6 +37,40 @@ if [[ -f "$HTML_DIR/build-info.json" ]]; then
 else
   CURRENT_VERSION="unknown"
 fi
+
+usage() {
+  cat <<EOF
+Usage: ./deploy.sh [--image my-registry/atlas]
+
+Environment overrides:
+  IMAGE           Override the container image (default: ${IMAGE_DEFAULT})
+  RUN_BACKUP=1    Enable backup hook
+  BACKUP_SCRIPT   Executable script to run when RUN_BACKUP=1
+EOF
+}
+
+PARSED_ARGS=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -i|--image)
+      if [[ -z "${2:-}" ]]; then
+        echo "❌ --image requires a value"
+        exit 1
+      fi
+      IMAGE="$2"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      PARSED_ARGS+=("$1")
+      shift
+      ;;
+  esac
+done
+set -- "${PARSED_ARGS[@]}"
 
 echo "📁 Repo root: $REPO_ROOT"
 echo "🗂️  HTML dir:   $HTML_DIR"
@@ -72,7 +107,7 @@ fi
 # Sanity checks
 command -v docker >/dev/null 2>&1 || { echo "❌ docker is not installed or not in PATH"; exit 1; }
 
-echo "📦 Starting deployment for version: $VERSION"
+echo "📦 Starting deployment for version: $VERSION (image: $IMAGE)"
 
 # Step 1: Write build-info.json for local dev fallbacks
 echo "📝 Writing build-info.json..."
@@ -89,12 +124,20 @@ fi
 echo "🧹 Removing existing '$CONTAINER_NAME' container if running..."
 docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
 
-# Step 4: (Optional) backup disabled by default. Enable by exporting RUN_BACKUP=1
-if [[ "${RUN_BACKUP:-0}" == "1" && -x "/home/karam/atlas-repo-backup.sh" ]]; then
-  echo "🗃️ Running backup script..."
-  /home/karam/atlas-repo-backup.sh || echo "⚠️ Backup script returned non-zero exit; continuing..."
+# Step 4: Optional backup hook controlled via RUN_BACKUP=1 BACKUP_SCRIPT=/path/to/script.sh
+if [[ "${RUN_BACKUP:-0}" == "1" ]]; then
+  if [[ -n "${BACKUP_SCRIPT:-}" ]]; then
+    if [[ -x "$BACKUP_SCRIPT" ]]; then
+      echo "🗃️ Running backup script: $BACKUP_SCRIPT"
+      "$BACKUP_SCRIPT" || echo "⚠️ Backup script returned non-zero exit; continuing..."
+    else
+      echo "⚠️ Backup script '$BACKUP_SCRIPT' is not executable; skipping"
+    fi
+  else
+    echo "⚠️ RUN_BACKUP=1 set but BACKUP_SCRIPT is empty; skipping backup"
+  fi
 else
-  echo "ℹ️ Skipping backup (set RUN_BACKUP=1 to enable and ensure script exists)"
+  echo "ℹ️ Skipping backup (set RUN_BACKUP=1 and BACKUP_SCRIPT=/path/to/script.sh)"
 fi
 
 # Step 5: Build Docker image from repo root

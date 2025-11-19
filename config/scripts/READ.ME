@@ -63,7 +63,7 @@ cp -r dist/* /swarm/data/atlas/html/
 
 publish container instructions
 
-/home/karam/atlas-repo-backup.sh
+# Optional: export RUN_BACKUP=1 BACKUP_SCRIPT=/path/to/script.sh before running deploy.sh
 
 docker run -d \
   --name atlas1 \
@@ -74,7 +74,7 @@ docker run -d \
   -v /swarm/data/atlas/html:/usr/share/nginx/html \
   -v /swarm/config/atlas:/config \
   -v /var/run/docker.sock:/var/run/docker.sock \
-  keinstien/atlas:v2.0
+  atlasproject/atlas:v2.0
 
 ports:
 8888 nginx
@@ -85,8 +85,8 @@ uvicorn scripts.app:app --host 0.0.0.0 --port 8889 > /config/logs/uvicorn.log 2>
 
 up to date scripts:
 
-docker commit atlas1 keinstien/atlas:v1.0
-docker push keinstien/atlas:v1.0
+docker commit atlas1 atlasproject/atlas:v1.0
+docker push atlasproject/atlas:v1.0
 docker rm -f atlas1
 
 docker run -d \
@@ -95,7 +95,7 @@ docker run -d \
   --cap-add=NET_RAW \
   --cap-add=NET_ADMIN \
   -v /var/run/docker.sock:/var/run/docker.sock \
-  keinstien/atlas:v2.0
+  atlasproject/atlas:v2.0
 
 
 
@@ -109,4 +109,4 @@ docker run -d \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -e ATLAS_UI_PORT=8884 \
   -e ATLAS_API_PORT=8885 \
-  keinstien/atlas:dev3.2.18
+  atlasproject/atlas:dev3.2.18

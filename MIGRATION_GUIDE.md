@@ -69,14 +69,14 @@ The easiest way to migrate is to let Atlas rebuild the database:
 
 3. **Pull the latest image and restart:**
    ```bash
-   docker pull keinstien/atlas:latest
+   docker pull atlasproject/atlas:latest
    docker run -d \
      --name atlas \
      --network=host \
      --cap-add=NET_RAW \
      --cap-add=NET_ADMIN \
      -v /var/run/docker.sock:/var/run/docker.sock \
-     keinstien/atlas:latest
+     atlasproject/atlas:latest
    ```
 
 4. **The database will be recreated** with the new schema on first run
