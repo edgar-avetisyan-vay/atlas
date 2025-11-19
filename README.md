@@ -31,73 +31,30 @@ Atlas performs three key functions:
 
 ---
 
-## 🖼️ Screenshots
+## 🧑‍💻 Getting Started (Local Development)
 
-### 🖥️ Desktop View
+Use this quick-start checklist whenever you begin working on Atlas locally:
 
-<table>
-<tr>
-<td width="50%">
-<a href="screenshots/dashboard_big_c.png" target="_blank">
-<img src="screenshots/dashboard_big_c.png" alt="Dashboard - Collapsed Layout" style="border: 2px solid #ddd; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);" />
-<p align="center"><em>Dashboard - Circular Layout</em></p>
-</a>
-</td>
-<td width="50%">
-<a href="screenshots/dashboard_big_h.png" target="_blank">
-<img src="screenshots/dashboard_big_h.png" alt="Dashboard - Horizontal Layout" style="border: 2px solid #ddd; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);" />
-<p align="center"><em>Dashboard - Hierarchical Layout</em></p>
-</a>
-</td>
-</tr>
-<tr>
-<td width="50%">
-<a href="screenshots/table_big.png" target="_blank">
-<img src="screenshots/table_big.png" alt="Hosts Table View" style="border: 2px solid #ddd; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);" />
-<p align="center"><em>Hosts Table View</em></p>
-</a>
-</td>
-<td width="50%">
-<a href="screenshots/logs_big.png" target="_blank">
-<img src="screenshots/logs_big.png" alt="Logs Panel" style="border: 2px solid #ddd; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);" />
-<p align="center"><em>Logs Panel</em></p>
-</a>
-</td>
-</tr>
-</table>
+1. **Clone and enter the repo**
+   ```bash
+   git clone https://github.com/<your-org>/atlas.git
+   cd atlas
+   ```
+2. **Install frontend dependencies**
+   ```bash
+   cd data/react-ui
+   npm install
+   npm run build
+   cd ../../
+   ```
+   The production-ready assets land in `data/react-ui/dist` and are copied into the container during `docker build`.
+3. **Build the container image**
+   ```bash
+   docker build -t atlas:dev .
+   ```
+4. **Run the stack** – Start the image with the environment variables described below (or reuse the sample `docker run` command). The UI becomes available on `http://localhost:8888/` and the FastAPI docs at `http://localhost:8888/api/docs`.
 
-### 📱 Mobile View
-
-<table>
-<tr>
-<td width="25%" align="center">
-<a href="screenshots/dashboard_small_c.png" target="_blank">
-<img src="screenshots/dashboard_small_c.png" alt="Mobile Dashboard - Collapsed" style="border: 2px solid #ddd; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); max-width: 250px;" />
-<p align="center"><em>Dashboard - Collapsed</em></p>
-</a>
-</td>
-<td width="25%" align="center">
-<a href="screenshots/dashboard_small_h.png" target="_blank">
-<img src="screenshots/dashboard_small_h.png" alt="Mobile Dashboard - Horizontal" style="border: 2px solid #ddd; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); max-width: 250px;" />
-<p align="center"><em>Dashboard - Horizontal</em></p>
-</a>
-</td>
-<td width="25%" align="center">
-<a href="screenshots/table_small.png" target="_blank">
-<img src="screenshots/table_small.png" alt="Mobile Hosts Table" style="border: 2px solid #ddd; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); max-width: 250px;" />
-<p align="center"><em>Hosts Table</em></p>
-</a>
-</td>
-<td width="25%" align="center">
-<a href="screenshots/logs_small.png" target="_blank">
-<img src="screenshots/logs_small.png" alt="Mobile Logs Panel" style="border: 2px solid #ddd; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); max-width: 250px;" />
-<p align="center"><em>Logs Panel</em></p>
-</a>
-</td>
-</tr>
-</table>
-
-> 💡 **Tip:** Click on any screenshot to view the full-size image
+Re-running steps 2–4 ensures you are always working from the latest frontend build and container image.
 
 ---
 
@@ -251,19 +208,19 @@ This is a new React-based UI.
 ### 🛠️ Setup and Build
 
 ```bash
-cd /swarm/data/atlas/react-ui
+cd data/react-ui
 npm install
 npm run build
 ```
 
 The built output will be in:
 ```
-/swarm/data/atlas/react-ui/dist/
+data/react-ui/dist/
 ```
 
-For development CI/CD (for UI and backend anf build a new docker version):
+For development CI/CD (build the UI, backend, and Docker image):
 ```bash
-/swarm/github-repos/atlas/deploy.sh
+./deploy.sh
 ```
 
 
@@ -274,7 +231,7 @@ To deploy a new version and upload it to Docker Hub, use the provided CI/CD scri
 1. Build and publish a new image:
 
    ```bash
-   /swarm/github-repos/atlas/deploy.sh
+   ./deploy.sh
    ```
 
    - The script will prompt you for a version tag (e.g. `v3.2`).
@@ -302,12 +259,10 @@ To deploy a new version and upload it to Docker Hub, use the provided CI/CD scri
 ## 🌍 URLs
 
 - **Swagger API docs:**
-  - `🌍 http://localhost:8888/api/docs` (Host Data API endpoint)
+  - `🌍 http://localhost:8888/api/docs`
 
-- **Frontend UI:**
-  - `🖥️ UI	http://localhost:8888/` (main dashboard)
-  - `📊 http://localhost:8888/hosts.html` (Hosts Table)
-  - `🧪 http://localhost:8888/visuals/vis.js_node_legends.html` (legacy test UI)
+- **Frontend UI (React SPA):**
+  - `🖥️ http://localhost:8888/`
 
 > Default exposed port is: `8888`
 
@@ -356,16 +311,16 @@ curl http://localhost:8888/api/scheduler/status
 ## 📌 Dev Tips
 
 To edit Go logic:
-- Main binary: `internal/scan/`
-- Commands exposed via: `main.go`
+- Main packages: `config/atlas_go/internal/scan/`
+- Commands exposed via: `config/atlas_go/main.go`
 
 To edit API:
-- Python FastAPI app: `scripts/app.py`
+- Python FastAPI app: `config/scripts/app.py`
 
 To edit UI:
-- Modify React app under `/react-ui`
-- Rebuild and copy static files to `/html`
-- _automated deplolyment and publish to dockerhub using the script deploy.sh_
+- Modify the React app under `data/react-ui`
+- Rebuild with `npm run build` to refresh `data/react-ui/dist`
+- Use `./deploy.sh` to copy the build output into the container image and push to Docker Hub
 ---
 
 ## ⚙️ Automation Notes
@@ -374,7 +329,7 @@ To edit UI:
 - All Go scan tasks run sequentially:
    - `initdb → fastscan → deepscan → dockerscan`
 
-- Scheduled scans are run every 30 minutes via Go timers.
+- Scheduled scans follow the intervals defined by `FASTSCAN_INTERVAL`, `DOCKERSCAN_INTERVAL`, and `DEEPSCAN_INTERVAL` (defaults: 3600s/3600s/7200s).
 
 - No cron dependency required inside the container.
 
