@@ -3,6 +3,7 @@ import { NetworkMap } from "./components/NetworkMap";
 import { HostsTable } from "./components/HostsTable";
 import { ScriptsPanel } from "./components/ScriptsPanel";
 import { LogsPanel } from "./components/LogsPanel";
+import InventoryPanel from "./components/InventoryPanel";
 import { useNetworkStats } from "./hooks/useNetworkStats";
 import BuildTag from "./components/BuildTag";
 import MobileHeader from "./components/MobileHeader";
@@ -11,7 +12,7 @@ import SitesPanel from "./components/SitesPanel";
 import { useSiteSource } from "./context/SiteSourceContext";
 // Theme toggle removed per request
 
-const tabs = ["Network Map", "Hosts Table", "Sites", "Scripts", "Logs"];
+const tabs = ["Network Map", "Hosts Table", "Inventory", "Sites", "Scripts", "Logs"];
 
 // Simple inline SVG icons (no external deps)
 function TabIcon({ tab, className = "w-6 h-6" }) {
@@ -27,6 +28,13 @@ function TabIcon({ tab, className = "w-6 h-6" }) {
       return (
         <svg viewBox="0 0 24 24" className={`${className} ${common}`}>
           <path d="M3 5h18v4H3zM3 10.5h18M3 15h18M3 19h18" stroke="currentColor" strokeWidth="1.5" fill="none"/>
+        </svg>
+      );
+    case "Inventory":
+      return (
+        <svg viewBox="0 0 24 24" className={`${className} ${common}`}>
+          <rect x="3" y="4" width="18" height="16" rx="2" ry="2" stroke="currentColor" strokeWidth="1.5" fill="none" />
+          <path d="M3 9h18M8 13h8M8 17h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
         </svg>
       );
     case "Sites":
@@ -255,6 +263,7 @@ export default function App() {
                 onClearPreset={() => setHostsShowDuplicates(false)}
               />
             )}
+            {activeTab === "Inventory" && <InventoryPanel />}
             {activeTab === "Sites" && <SitesPanel />}
             {activeTab === "Scripts" && <ScriptsPanel />}
             {activeTab === "Logs" && <LogsPanel />}
