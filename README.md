@@ -75,6 +75,8 @@ The helper builds the lightweight agent image (`Dockerfile.agent`), runs it with
 | `ATLAS_AGENT_INTERVAL` | Interval between deep scans when the agent loop runs. Supports Go duration strings (`15m`, `1h`) or seconds. | `15m` |
 | `ATLAS_AGENT_ONCE` | Set to `true`/`1` to run a single remote scan and exit | `false` |
 
+Use the **Sites** tab in the UI to pre-create locations and mint long-lived agent tokens. Each generated token is displayed for copy/paste so you can drop it straight into `ATLAS_AGENT_TOKEN` when launching the remote container.
+
 ---
 ## 🧱 Architecture overview
 ```
