@@ -124,8 +124,7 @@ func parseNmapPorts(s string) PortDetails {
 func scanAllTcp(ip string, logProgress io.Writer) (PortDetails, string) {
 	logFile := fmt.Sprintf("/config/logs/nmap_tcp_%s.log", strings.ReplaceAll(ip, ".", "_"))
 	// Force host up status with -Pn so port scans proceed even when ICMP is filtered.
-	nmapArgs := []string{"-O", "-Pn", "-sS", "-p-", ip, "-oG", logFile}
-	fmt.Fprintf(logProgress, "[nmap] running: nmap %s\n", strings.Join(nmapArgs, " "))
+	nmapArgs := []string{"-O", "-Pn", "-p-", ip, "-oG", logFile}
 	start := time.Now()
 	cmd := exec.Command("nmap", nmapArgs...)
 	cmd.Stdout = logProgress
