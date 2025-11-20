@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"database/sql"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -120,12 +121,19 @@ func parseNmapPorts(s string) PortDetails {
 	return PortDetails{Summary: summary, Ports: ports}
 }
 
-func scanAllTcp(ip string, logProgress *os.File) (PortDetails, string) {
+func scanAllTcp(ip string, logProgress io.Writer) (PortDetails, string) {
 	logFile := fmt.Sprintf("/config/logs/nmap_tcp_%s.log", strings.ReplaceAll(ip, ".", "_"))
-	nmapArgs := []string{"-O", "-p-", ip, "-oG", logFile}
+	// Force host up status with -Pn so port scans proceed even when ICMP is filtered.
+	nmapArgs := []string{"-O", "-Pn", "-sS", "-p-", ip, "-oG", logFile}
+	fmt.Fprintf(logProgress, "[nmap] running: nmap %s\n", strings.Join(nmapArgs, " "))
 	start := time.Now()
 	cmd := exec.Command("nmap", nmapArgs...)
-	cmd.Run()
+	cmd.Stdout = logProgress
+	cmd.Stderr = logProgress
+	if err := cmd.Run(); err != nil {
+		fmt.Fprintf(logProgress, "[nmap] command failed for %s: %v\n", ip, err)
+		return PortDetails{Summary: "Unknown"}, "Unknown"
+	}
 	elapsed := time.Since(start)
 	fmt.Fprintf(logProgress, "TCP scan for %s finished in %s\n", ip, elapsed)
 
@@ -225,18 +233,19 @@ func DeepScan(opts DeepScanOptions) error {
 	logFile := "/config/logs/deep_scan_progress.log"
 	lf, _ := os.Create(logFile)
 	defer lf.Close()
+	logProgress := io.MultiWriter(lf, os.Stdout)
 
 	var hostInfos []HostInfo
 
 	// Discover live hosts on all interfaces
 	for _, iface := range interfaces {
-		fmt.Fprintf(lf, "Discovering live hosts on %s (interface: %s)...\n", iface.Subnet, iface.Name)
+		fmt.Fprintf(logProgress, "Discovering live hosts on %s (interface: %s)...\n", iface.Subnet, iface.Name)
 		hosts, err := discoverLiveHosts(iface.Subnet)
 		if err != nil {
-			fmt.Fprintf(lf, "Failed to discover hosts on %s: %v\n", iface.Subnet, err)
+			fmt.Fprintf(logProgress, "Failed to discover hosts on %s: %v\n", iface.Subnet, err)
 			continue
 		}
-		fmt.Fprintf(lf, "Discovered %d hosts on %s\n", len(hosts), iface.Subnet)
+		fmt.Fprintf(logProgress, "Discovered %d hosts on %s\n", len(hosts), iface.Subnet)
 		// Add interface name to each host
 		for _, host := range hosts {
 			host.InterfaceName = iface.Name
@@ -245,21 +254,21 @@ func DeepScan(opts DeepScanOptions) error {
 	}
 
 	total := len(hostInfos)
-	fmt.Fprintf(lf, "Total discovered: %d hosts in %s\n", total, time.Since(startTime))
+	fmt.Fprintf(logProgress, "Total discovered: %d hosts in %s\n", total, time.Since(startTime))
 
 	var db *sql.DB
 	if !opts.SkipDB {
 		dbPath := "/config/db/atlas.db"
 		db, err = sql.Open("sqlite3", dbPath)
 		if err != nil {
-			fmt.Fprintf(lf, "Failed to open DB: %v\n", err)
+			fmt.Fprintf(logProgress, "Failed to open DB: %v\n", err)
 			return err
 		}
 		defer db.Close()
 
 		// Mark all hosts as offline before scanning
 		if _, err := db.Exec("UPDATE hosts SET online_status = 'offline'"); err != nil {
-			fmt.Fprintf(lf, "Failed to mark hosts as offline: %v\n", err)
+			fmt.Fprintf(logProgress, "Failed to mark hosts as offline: %v\n", err)
 		}
 	}
 
@@ -274,9 +283,9 @@ func DeepScan(opts DeepScanOptions) error {
 			ip := host.IP
 			// Use bestHostName for all fallback methods
 			name := bestHostName(ip, host.Name)
-			fmt.Fprintf(lf, "Scanning host %d/%d: %s\n", idx+1, total, ip)
+			fmt.Fprintf(logProgress, "Scanning host %d/%d: %s\n", idx+1, total, ip)
 
-			tcpPorts, osInfo := scanAllTcp(ip, lf)
+			tcpPorts, osInfo := scanAllTcp(ip, logProgress)
 			mac := getMacAddress(ip)
 			status := utils.PingHost(ip)
 			elapsed := time.Since(startTime)
@@ -285,8 +294,8 @@ func DeepScan(opts DeepScanOptions) error {
 			if idx+1 > 0 {
 				estLeft = (elapsed / time.Duration(idx+1)) * time.Duration(hostsLeft)
 			}
-			fmt.Fprintf(lf, "Host %s: TCP ports: %s, OS: %s\n", ip, tcpPorts.Summary, osInfo)
-			fmt.Fprintf(lf, "Progress: %d/%d hosts, elapsed: %s, estimated left: %s\n", idx+1, total, elapsed, estLeft)
+			fmt.Fprintf(logProgress, "Host %s: TCP ports: %s, OS: %s\n", ip, tcpPorts.Summary, osInfo)
+			fmt.Fprintf(logProgress, "Progress: %d/%d hosts, elapsed: %s, estimated left: %s\n", idx+1, total, elapsed, estLeft)
 
 			record := HostRecord{
 				IP:            ip,
@@ -305,18 +314,18 @@ func DeepScan(opts DeepScanOptions) error {
 			}
 			if db != nil {
 				if err := upsertHost(db, record); err != nil {
-					fmt.Fprintf(lf, "❌ Update failed for %s on interface %s: %v\n", ip, host.InterfaceName, err)
+					fmt.Fprintf(logProgress, "❌ Update failed for %s on interface %s: %v\n", ip, host.InterfaceName, err)
 				}
 			}
 			batchMu.Lock()
 			remoteBatch = append(remoteBatch, record)
 			batchMu.Unlock()
-			fmt.Fprintf(lf, "Host %s scanned in %s\n", ip, time.Since(hostStart))
+			fmt.Fprintf(logProgress, "Host %s scanned in %s\n", ip, time.Since(hostStart))
 		}(idx, host)
 	}
 	wg.Wait()
 
-	fmt.Fprintf(lf, "Deep scan complete in %s\n", time.Since(startTime))
+	fmt.Fprintf(logProgress, "Deep scan complete in %s\n", time.Since(startTime))
 	if err := emitHosts(remoteBatch, opts.Remote); err != nil {
 		return err
 	}
