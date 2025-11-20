@@ -318,6 +318,7 @@ export default function InventoryPanel() {
           Ports not reported for {portlessCount} assets. Agents deep scan by default—if data stays incomplete, ensure the
           container runs with <code className="mx-1">NET_RAW</code> and <code className="mx-1">NET_ADMIN</code> capabilities or wait
           for the next scan cycle.
+
         </div>
       )}
 
