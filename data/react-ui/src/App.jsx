@@ -1,7 +1,6 @@
 import React, { useMemo, useRef, useEffect, useState } from "react";
 import { NetworkMap } from "./components/NetworkMap";
 import { HostsTable } from "./components/HostsTable";
-import { ScriptsPanel } from "./components/ScriptsPanel";
 import { LogsPanel } from "./components/LogsPanel";
 import InventoryPanel from "./components/InventoryPanel";
 import { useNetworkStats } from "./hooks/useNetworkStats";
@@ -12,7 +11,7 @@ import SitesPanel from "./components/SitesPanel";
 import { useSiteSource } from "./context/SiteSourceContext";
 // Theme toggle removed per request
 
-const tabs = ["Network Map", "Hosts Table", "Inventory", "Sites", "Scripts", "Logs"];
+const tabs = ["Network Map", "Hosts Table", "Inventory", "Sites", "Logs"];
 
 // Simple inline SVG icons (no external deps)
 function TabIcon({ tab, className = "w-6 h-6" }) {
@@ -48,13 +47,6 @@ function TabIcon({ tab, className = "w-6 h-6" }) {
             strokeLinejoin="round"
           />
           <path d="M2 21h20" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-        </svg>
-      );
-    case "Scripts":
-      return (
-        <svg viewBox="0 0 24 24" className={`${className} ${common}`}>
-          <path d="M5 4h10l4 4v12H5z" fill="none" stroke="currentColor" strokeWidth="1.5"/>
-          <path d="M9 13l-3 3 3 3M12 19h5" stroke="currentColor" strokeWidth="1.5" fill="none"/>
         </svg>
       );
     case "Logs":
@@ -265,7 +257,6 @@ export default function App() {
             )}
             {activeTab === "Inventory" && <InventoryPanel />}
             {activeTab === "Sites" && <SitesPanel />}
-            {activeTab === "Scripts" && <ScriptsPanel />}
             {activeTab === "Logs" && <LogsPanel />}
           </div>
         </div>

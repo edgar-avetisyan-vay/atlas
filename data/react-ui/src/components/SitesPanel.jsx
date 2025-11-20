@@ -20,6 +20,22 @@ function relativeTime(value) {
   return `${Math.floor(deltaSeconds / 86400)}d ago`;
 }
 
+function maskTokenDisplay(token) {
+  if (!token) return "Hidden";
+  if (token.length <= 6) return "••••";
+  return `${token.slice(0, 3)}••••${token.slice(-3)}`;
+}
+
+function toTokenRecord(token) {
+  const fallbackId = token.id || `token-${token.created_at || Date.now()}`;
+  return {
+    id: fallbackId,
+    label: token.label,
+    created_at: token.created_at,
+    masked: maskTokenDisplay(token.token),
+  };
+}
+
 function msSince(value) {
   const ts = new Date(value).getTime();
   if (Number.isNaN(ts)) return Number.POSITIVE_INFINITY;
@@ -138,23 +154,33 @@ export default function SitesPanel() {
         latestToken: response.token,
       });
       setTokenFormLabel("");
-      setTokens((prev) => [
-        {
-          id: response.id || `token-${Date.now()}`,
-          token: response.token,
-          label: response.label,
-          created_at: response.created_at,
-        },
-        ...prev,
-      ]);
+      setTokens((prev) => [toTokenRecord(response), ...prev]);
     } catch (err) {
       setTokenStatus({ loading: false, error: err.message || String(err), success: null, latestToken: null });
     }
   }
 
   async function copyToken(value) {
+    async function fallbackCopy(text) {
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.select();
+      try {
+        document.execCommand("copy");
+      } finally {
+        document.body.removeChild(textarea);
+      }
+    }
+
     try {
-      await navigator.clipboard.writeText(value);
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(value);
+      } else {
+        await fallbackCopy(value);
+      }
       setTokenStatus((prev) => ({
         ...prev,
         error: null,
@@ -197,7 +223,7 @@ export default function SitesPanel() {
         if (!mounted) return;
         setHosts(siteHosts);
         setAgents(siteAgents);
-        setTokens(siteTokens);
+        setTokens(siteTokens.map((token) => toTokenRecord(token)));
       } catch (err) {
         if (mounted) setDetailError(err.message || String(err));
       } finally {
@@ -484,7 +510,8 @@ export default function SitesPanel() {
                   </button>
                 </div>
                 <p className="text-xs text-blue-800 mt-2">
-                  Paste into <code className="font-mono">ATLAS_AGENT_TOKEN</code> for your agent container.
+                  Paste into <code className="font-mono">ATLAS_AGENT_TOKEN</code> for your agent container. Tokens are only shown
+                  once—store it securely now.
                 </p>
               </div>
             )}
@@ -515,20 +542,14 @@ export default function SitesPanel() {
             <div className="px-4 pb-4">
               <ul className="divide-y rounded border border-gray-200 bg-gray-50 max-h-56 overflow-auto">
                 {tokens.map((token) => (
-                  <li key={token.id || token.token} className="p-3 flex items-center justify-between gap-3">
+                  <li key={token.id} className="p-3 flex items-center justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="font-mono text-xs break-all text-gray-900">{token.token}</p>
+                      <p className="font-mono text-xs break-all text-gray-900">{token.masked}</p>
                       <p className="text-xs text-gray-500">
                         {token.label || "Agent token"} · {formatDate(token.created_at)}
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => copyToken(token.token)}
-                      className="shrink-0 inline-flex items-center rounded border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
-                    >
-                      Copy
-                    </button>
+                    <span className="text-xs text-gray-500">Hidden after creation</span>
                   </li>
                 ))}
                 {!tokens.length && (
