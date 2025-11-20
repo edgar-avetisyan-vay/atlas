@@ -31,6 +31,16 @@ function fmtLastSeen(v) {
   const days = Math.floor(hrs / 24);
   return `${days}d`;
 }
+
+function renderPortChips(value) {
+  const raw = (value || "").toString();
+  if (!raw || raw === "no_ports") return [];
+  return raw
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => part.replace(/\s+/g, " "));
+}
 function normalizeRow(r, group) {
   if (group === "docker") {
     // Docker rows in the API may place the IP at r[2] (new) or r[1] (legacy),
@@ -598,20 +608,20 @@ function HostsTable({ showDuplicates = false, onClearPreset }) {
                           <span className="capitalize">{r.group}</span>
                         );
                       } else if (col === "ports") {
-                        content = (
-                          <div title={r.ports} className="min-w-0">
-                            <div
-                              className="block"
-                              style={{
-                                display: "-webkit-box",
-                                WebkitLineClamp: 2,
-                                WebkitBoxOrient: "vertical",
-                                overflow: "hidden",
-                              }}
-                            >
-                              {r.ports}
-                            </div>
+                        const chips = renderPortChips(r.ports);
+                        content = chips.length ? (
+                          <div className="flex flex-wrap gap-1 text-xs" title={r.ports}>
+                            {chips.map((chip, idx) => (
+                              <span
+                                key={`${r.ip || r.name}-port-${idx}-${chip}`}
+                                className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[11px] text-gray-700 border border-gray-200"
+                              >
+                                {chip}
+                              </span>
+                            ))}
                           </div>
+                        ) : (
+                          <span className="text-gray-400">—</span>
                         );
                       } else if (col === "nextHop") {
                         content = (

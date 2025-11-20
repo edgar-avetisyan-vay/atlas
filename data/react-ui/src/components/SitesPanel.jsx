@@ -20,6 +20,34 @@ function relativeTime(value) {
   return `${Math.floor(deltaSeconds / 86400)}d ago`;
 }
 
+function msSince(value) {
+  const ts = new Date(value).getTime();
+  if (Number.isNaN(ts)) return Number.POSITIVE_INFINITY;
+  return Date.now() - ts;
+}
+
+function describeAgentHealth(agent) {
+  const heartbeatAge = msSince(agent?.last_heartbeat);
+  const ingestAge = msSince(agent?.last_ingest);
+
+  const heartbeatOk = heartbeatAge < 5 * 60 * 1000; // 5 minutes
+  const ingestOk = ingestAge < 30 * 60 * 1000; // 30 minutes
+
+  if (heartbeatOk && ingestOk) {
+    return { label: "Healthy", tone: "green", detail: "Heartbeats and ingest are recent" };
+  }
+
+  if (!heartbeatOk && ingestOk) {
+    return { label: "Stale heartbeat", tone: "amber", detail: "Agent is ingesting but heartbeat is late" };
+  }
+
+  if (heartbeatOk && !ingestOk) {
+    return { label: "No ingest", tone: "amber", detail: "Heartbeat is alive but ingest is older than 30m" };
+  }
+
+  return { label: "Unresponsive", tone: "red", detail: "No recent heartbeat or ingest" };
+}
+
 export default function SitesPanel() {
   const [sites, setSites] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -423,44 +451,7 @@ export default function SitesPanel() {
         </section>
 
         <section className="md:col-span-2 flex flex-col gap-4 min-h-0">
-          <div className="bg-white rounded-lg border border-gray-200 flex flex-col min-h-0">
-            <header className="p-4 border-b border-gray-100">
-              <h3 className="text-lg font-semibold">Agents</h3>
-              <p className="text-sm text-gray-500">{activeSite ? activeSite.site_id : "Select a site"}</p>
-            </header>
-            <div className="flex-1 overflow-auto">
-              <ul className="divide-y">
-                {agents.map((agent) => (
-                  <li key={agent.agent_id} className="p-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="font-semibold">{agent.agent_id}</p>
-                        <p className="text-xs text-gray-500">Version: {agent.agent_version || "unknown"}</p>
-                      </div>
-                      <span className="text-xs text-gray-500">{relativeTime(agent.last_heartbeat)}</span>
-                    </div>
-                    <dl className="mt-2 text-xs text-gray-600 grid grid-cols-2 gap-2">
-                      <div>
-                        <dt className="uppercase tracking-wide">Last Ingest</dt>
-                        <dd>{formatDate(agent.last_ingest)}</dd>
-                      </div>
-                      <div>
-                        <dt className="uppercase tracking-wide">Heartbeat</dt>
-                        <dd>{formatDate(agent.last_heartbeat)}</dd>
-                      </div>
-                    </dl>
-                  </li>
-                ))}
-                {!agents.length && (
-                  <li className="p-4 text-sm text-gray-500">
-                    {activeSiteId ? "No agents have reported in yet" : "Select a site"}
-                  </li>
-                )}
-              </ul>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg border border-gray-200 flex flex-col">
+          <div className="bg-white rounded-lg border border-gray-200 flex flex-col shrink-0">
             <header className="p-4 border-b border-gray-100 flex items-center justify-between">
               <div>
                 <h3 className="text-lg font-semibold">Agent tokens</h3>
@@ -522,7 +513,7 @@ export default function SitesPanel() {
             </form>
 
             <div className="px-4 pb-4">
-              <ul className="divide-y rounded border border-gray-200 bg-gray-50">
+              <ul className="divide-y rounded border border-gray-200 bg-gray-50 max-h-56 overflow-auto">
                 {tokens.map((token) => (
                   <li key={token.id || token.token} className="p-3 flex items-center justify-between gap-3">
                     <div className="min-w-0">
@@ -543,6 +534,72 @@ export default function SitesPanel() {
                 {!tokens.length && (
                   <li className="p-3 text-sm text-gray-500 text-center">
                     {activeSiteId ? "No tokens yet — generate one to deploy an agent." : "Select a site to manage tokens."}
+                  </li>
+                )}
+              </ul>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg border border-gray-200 flex flex-col flex-1 min-h-0">
+            <header className="p-4 border-b border-gray-100">
+              <h3 className="text-lg font-semibold">Agents</h3>
+              <p className="text-sm text-gray-500">{activeSite ? activeSite.site_id : "Select a site"}</p>
+            </header>
+            <div className="flex-1 overflow-auto">
+              <ul className="divide-y">
+                {agents.map((agent) => {
+                  const health = describeAgentHealth(agent);
+                  const toneClass = health.tone === "green"
+                    ? "bg-green-100 text-green-800 border-green-200"
+                    : health.tone === "amber"
+                      ? "bg-amber-100 text-amber-800 border-amber-200"
+                      : "bg-red-100 text-red-800 border-red-200";
+
+                  return (
+                    <li key={agent.agent_id} className="p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="font-semibold break-words">{agent.agent_id}</p>
+                          <p className="text-xs text-gray-500">Version: {agent.agent_version || "unknown"}</p>
+                          <div className="mt-2 flex items-center gap-2 flex-wrap">
+                            <span className={`inline-flex items-center gap-2 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${toneClass}`}>
+                              <span className="h-2 w-2 rounded-full bg-current opacity-75" />
+                              {health.label}
+                            </span>
+                            <span className="text-xs text-gray-500">{health.detail}</span>
+                          </div>
+                        </div>
+                        <span className="text-xs text-gray-500">{relativeTime(agent.last_heartbeat)}</span>
+                      </div>
+                      <dl className="mt-2 text-xs text-gray-600 grid grid-cols-2 gap-2">
+                        <div>
+                          <dt className="uppercase tracking-wide">Last Ingest</dt>
+                          <dd>{formatDate(agent.last_ingest)}</dd>
+                        </div>
+                        <div>
+                          <dt className="uppercase tracking-wide">Heartbeat</dt>
+                          <dd>{formatDate(agent.last_heartbeat)}</dd>
+                        </div>
+                        <div>
+                          <dt className="uppercase tracking-wide">Status</dt>
+                          <dd>{agent.status || agent.state || "—"}</dd>
+                        </div>
+                        <div>
+                          <dt className="uppercase tracking-wide">Location</dt>
+                          <dd>{agent.hostname || agent.source_host || "unknown"}</dd>
+                        </div>
+                      </dl>
+                      {(agent.last_error || agent.message) && (
+                        <p className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+                          {agent.last_error || agent.message}
+                        </p>
+                      )}
+                    </li>
+                  );
+                })}
+                {!agents.length && (
+                  <li className="p-4 text-sm text-gray-500">
+                    {activeSiteId ? "No agents have reported in yet" : "Select a site"}
                   </li>
                 )}
               </ul>
