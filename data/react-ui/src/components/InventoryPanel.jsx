@@ -3,6 +3,7 @@ import { AtlasAPI } from "../api";
 
 const CONTROLLER_SITE = { id: "controller", name: "Controller" };
 const ALL_SITES = { id: "all", name: "All sites" };
+const SITE_STORAGE_KEY = "atlas.inventory.site";
 
 function looksLikeIp(value) {
   return /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.test(String(value || ""));
@@ -120,7 +121,10 @@ function summarizeAssets(assets) {
 export default function InventoryPanel() {
   const [siteSummary, setSiteSummary] = useState([]);
   const [assets, setAssets] = useState([]);
-  const [selectedSiteId, setSelectedSiteId] = useState(CONTROLLER_SITE.id);
+  const [selectedSiteId, setSelectedSiteId] = useState(() => {
+    if (typeof window === "undefined") return ALL_SITES.id;
+    return window.localStorage.getItem(SITE_STORAGE_KEY) || ALL_SITES.id;
+  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [partialErrors, setPartialErrors] = useState([]);
@@ -152,6 +156,18 @@ export default function InventoryPanel() {
       clearInterval(timer);
     };
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(SITE_STORAGE_KEY, selectedSiteId);
+  }, [selectedSiteId]);
+
+  useEffect(() => {
+    if (!siteSummary.length) return;
+    if (selectedSiteId === CONTROLLER_SITE.id || selectedSiteId === ALL_SITES.id) return;
+    const exists = siteSummary.some((s) => s.site_id === selectedSiteId);
+    if (!exists) setSelectedSiteId(ALL_SITES.id);
+  }, [selectedSiteId, siteSummary]);
 
   useEffect(() => {
     let cancelled = false;
@@ -236,6 +252,12 @@ export default function InventoryPanel() {
       .sort((a, b) => a.hostname.localeCompare(b.hostname));
   }, [assets, query, statusFilter, unknownOnly]);
 
+  const hasFilters = useMemo(
+    () => Boolean(query.trim() || unknownOnly || statusFilter !== "all"),
+    [query, unknownOnly, statusFilter]
+  );
+  const hiddenCount = hasFilters ? assets.length - filteredAssets.length : 0;
+
   const summary = useMemo(() => summarizeAssets(assets), [assets]);
   const unknownAssets = useMemo(() => assets.filter((a) => a.isUnknown).slice(0, 8), [assets]);
 
@@ -316,6 +338,9 @@ export default function InventoryPanel() {
                 {selectedSiteId !== ALL_SITES.id && siteOptions.find((o) => o.id === selectedSiteId)
                   ? ` at ${siteOptions.find((o) => o.id === selectedSiteId)?.name}`
                   : ""}
+                {hiddenCount > 0 && (
+                  <span className="ml-2 text-amber-700">({hiddenCount} hidden by filters)</span>
+                )}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -346,6 +371,19 @@ export default function InventoryPanel() {
                 />
                 Unknown only
               </label>
+              {hasFilters && (
+                <button
+                  type="button"
+                  className="rounded border border-gray-300 px-3 py-1 text-sm text-gray-700 hover:bg-gray-100"
+                  onClick={() => {
+                    setQuery("");
+                    setStatusFilter("all");
+                    setUnknownOnly(false);
+                  }}
+                >
+                  Clear filters
+                </button>
+              )}
             </div>
           </div>
 

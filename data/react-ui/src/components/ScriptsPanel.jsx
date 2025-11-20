@@ -10,13 +10,13 @@ import { apiGet } from "../api"; // NEW: centralized API helper (uses VITE_ envs
 const API = "/api";
 
 const SCRIPTS = [
-  { key: "scan-hosts-fast", label: "Fast Scan", intervalKey: "fastscan" },
   { key: "scan-hosts-deep", label: "Deep Scan", intervalKey: "deepscan" },
+  { key: "scan-hosts-fast", label: "Fast Scan", intervalKey: "fastscan" },
   { key: "scan-docker", label: "Docker Scan", intervalKey: "dockerscan" },
 ];
 
 export function ScriptsPanel() {
-  const [selected, setSelected] = useState(SCRIPTS[0].key);
+  const [selected, setSelected] = useState("scan-hosts-deep");
   const [liveLines, setLiveLines] = useState([]);
   const [isLive, setIsLive] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -275,6 +275,10 @@ export function ScriptsPanel() {
       {/* Manual Script Executor Panel */}
   <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm w-full flex-1 min-h-0 flex flex-col">
         <h2 className="text-lg font-semibold mb-2">Manual Script Executor</h2>
+        <p className="text-sm text-gray-600 mb-3">
+          Deep Scan enumerates ports while Fast Scan performs a lighter sweep. Start with Deep Scan when you are
+          validating new hosts so the interface shows service information right away.
+        </p>
         <div className="flex flex-wrap items-center gap-3">
           <label className="font-medium">Script</label>
           <select
