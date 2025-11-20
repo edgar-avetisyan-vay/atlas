@@ -98,7 +98,6 @@ else
     -e ATLAS_SITE_ID="$ATLAS_SITE_ID"
     -e ATLAS_AGENT_ID="$ATLAS_AGENT_ID"
     -e ATLAS_AGENT_TOKEN="$ATLAS_AGENT_TOKEN"
-    "$IMAGE_NAME"
   )
 
   if [[ -n "${ATLAS_SITE_NAME:-}" ]]; then
@@ -113,6 +112,8 @@ else
   if [[ -n "${ATLAS_AGENT_ONCE:-}" ]]; then
     run_args+=( -e "ATLAS_AGENT_ONCE=$ATLAS_AGENT_ONCE" )
   fi
+
+  run_args+=( "$IMAGE_NAME" )
 
   "${run_args[@]}"
 
