@@ -8,6 +8,7 @@ import logging
 import os
 import json
 from datetime import datetime
+import secrets
 from typing import Any, Dict, List, Optional
 from scripts.scheduler import get_scheduler
 
@@ -134,10 +135,25 @@ CREATE TABLE IF NOT EXISTS remote_sites (
 );
 """
 
+REMOTE_SITE_TOKENS_TABLE = """
+CREATE TABLE IF NOT EXISTS remote_site_tokens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    site_id TEXT NOT NULL,
+    token TEXT NOT NULL,
+    label TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(token)
+);
+"""
+
 
 def get_db_connection():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    try:
+        conn.execute("PRAGMA foreign_keys = ON")
+    except Exception:
+        pass
     return conn
 
 
@@ -145,7 +161,12 @@ def ensure_remote_tables(conn: sqlite3.Connection):
     conn.execute(REMOTE_HOSTS_TABLE)
     conn.execute(REMOTE_AGENTS_TABLE)
     conn.execute(REMOTE_SITES_TABLE)
+    conn.execute(REMOTE_SITE_TOKENS_TABLE)
     conn.commit()
+
+
+class SiteTokenRequest(BaseModel):
+    label: Optional[str] = None
 
 # Scripts and their log files (used for POST tee + stream)
 ALLOWED_SCRIPTS = {
@@ -361,6 +382,75 @@ def register_site(site: SiteDefinition):
         "description": description,
         "updated_at": now,
     }
+
+
+def _ensure_site_exists(cur: sqlite3.Cursor, site_id: str):
+    cur.execute("SELECT site_id FROM remote_sites WHERE site_id = ?", (site_id,))
+    if cur.fetchone() is None:
+        raise HTTPException(status_code=404, detail=f"Site '{site_id}' not found")
+
+
+@app.post("/sites/{site_id}/tokens", tags=["Remote Sites"])
+def create_site_token(site_id: str, req: SiteTokenRequest):
+    trimmed_id = site_id.strip()
+    if not trimmed_id:
+        raise HTTPException(status_code=400, detail="site_id is required")
+
+    label = req.label.strip() if req.label else None
+    now = datetime.utcnow().isoformat() + "Z"
+    token = secrets.token_urlsafe(32)
+
+    conn = get_db_connection()
+    ensure_remote_tables(conn)
+    cur = conn.cursor()
+    _ensure_site_exists(cur, trimmed_id)
+
+    cur.execute(
+        """
+        INSERT INTO remote_site_tokens(site_id, token, label, created_at)
+        VALUES(?, ?, ?, ?)
+        """,
+        (trimmed_id, token, label, now),
+    )
+    new_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+
+    return {
+        "status": "ok",
+        "id": new_id,
+        "site_id": trimmed_id,
+        "token": token,
+        "label": label,
+        "created_at": now,
+    }
+
+
+@app.get("/sites/{site_id}/tokens", tags=["Remote Sites"])
+def list_site_tokens(site_id: str):
+    trimmed_id = site_id.strip()
+    if not trimmed_id:
+        raise HTTPException(status_code=400, detail="site_id is required")
+
+    conn = get_db_connection()
+    ensure_remote_tables(conn)
+    cur = conn.cursor()
+    _ensure_site_exists(cur, trimmed_id)
+    cur.execute(
+        """
+        SELECT id, token, label, created_at
+        FROM remote_site_tokens
+        WHERE site_id = ?
+        ORDER BY created_at DESC
+        """,
+        (trimmed_id,),
+    )
+    rows = cur.fetchall()
+    conn.close()
+    return [
+        {"id": row["id"], "token": row["token"], "label": row["label"], "created_at": row["created_at"]}
+        for row in rows
+    ]
 
 
 @app.get("/sites/summary", tags=["Remote Sites"])

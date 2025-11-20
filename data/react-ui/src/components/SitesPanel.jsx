@@ -26,10 +26,13 @@ export default function SitesPanel() {
   const [error, setError] = useState(null);
   const [hosts, setHosts] = useState([]);
   const [agents, setAgents] = useState([]);
+  const [tokens, setTokens] = useState([]);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState(null);
   const [createForm, setCreateForm] = useState({ site_id: "", site_name: "", description: "" });
   const [createStatus, setCreateStatus] = useState({ loading: false, error: null, success: null });
+  const [tokenFormLabel, setTokenFormLabel] = useState("");
+  const [tokenStatus, setTokenStatus] = useState({ loading: false, error: null, success: null, latestToken: null });
   const { activeSiteId, activeSiteName, setActiveSite, clearActiveSite } = useSiteSource();
 
   useEffect(() => {
@@ -88,6 +91,53 @@ export default function SitesPanel() {
     }
   }
 
+  async function handleGenerateToken(event) {
+    event.preventDefault();
+    if (!activeSiteId) {
+      setTokenStatus({ loading: false, error: "Select a site before generating a token", success: null, latestToken: null });
+      return;
+    }
+
+    setTokenStatus({ loading: true, error: null, success: null, latestToken: null });
+    try {
+      const response = await AtlasAPI.createSiteToken(activeSiteId, {
+        label: tokenFormLabel.trim() || undefined,
+      });
+      setTokenStatus({
+        loading: false,
+        error: null,
+        success: "Token generated. Copy it into your agent environment.",
+        latestToken: response.token,
+      });
+      setTokenFormLabel("");
+      setTokens((prev) => [
+        {
+          id: response.id || `token-${Date.now()}`,
+          token: response.token,
+          label: response.label,
+          created_at: response.created_at,
+        },
+        ...prev,
+      ]);
+    } catch (err) {
+      setTokenStatus({ loading: false, error: err.message || String(err), success: null, latestToken: null });
+    }
+  }
+
+  async function copyToken(value) {
+    try {
+      await navigator.clipboard.writeText(value);
+      setTokenStatus((prev) => ({
+        ...prev,
+        error: null,
+        success: "Token copied to clipboard",
+        latestToken: prev.latestToken || value,
+      }));
+    } catch (err) {
+      setTokenStatus((prev) => ({ ...prev, error: "Clipboard copy failed", success: null }));
+    }
+  }
+
   const activeSite = useMemo(
     () => sites.find((s) => s.site_id === activeSiteId) || null,
     [sites, activeSiteId]
@@ -95,9 +145,13 @@ export default function SitesPanel() {
 
   useEffect(() => {
     let mounted = true;
+    setTokenStatus({ loading: false, error: null, success: null, latestToken: null });
+    setTokenFormLabel("");
     if (!activeSiteId) {
       setHosts([]);
       setAgents([]);
+      setTokens([]);
+      setTokenStatus({ loading: false, error: null, success: null, latestToken: null });
       return () => {
         mounted = false;
       };
@@ -107,13 +161,15 @@ export default function SitesPanel() {
       setDetailLoading(true);
       setDetailError(null);
       try {
-        const [siteHosts, siteAgents] = await Promise.all([
+        const [siteHosts, siteAgents, siteTokens] = await Promise.all([
           AtlasAPI.getSiteHosts(activeSiteId),
           AtlasAPI.getSiteAgents(activeSiteId),
+          AtlasAPI.getSiteTokens(activeSiteId),
         ]);
         if (!mounted) return;
         setHosts(siteHosts);
         setAgents(siteAgents);
+        setTokens(siteTokens);
       } catch (err) {
         if (mounted) setDetailError(err.message || String(err));
       } finally {
@@ -366,40 +422,131 @@ export default function SitesPanel() {
           </div>
         </section>
 
-        <section className="md:col-span-2 bg-white rounded-lg border border-gray-200 flex flex-col min-h-0">
-          <header className="p-4 border-b border-gray-100">
-            <h3 className="text-lg font-semibold">Agents</h3>
-            <p className="text-sm text-gray-500">{activeSite ? activeSite.site_id : "Select a site"}</p>
-          </header>
-          <div className="flex-1 overflow-auto">
-            <ul className="divide-y">
-              {agents.map((agent) => (
-                <li key={agent.agent_id} className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-semibold">{agent.agent_id}</p>
-                      <p className="text-xs text-gray-500">Version: {agent.agent_version || "unknown"}</p>
+        <section className="md:col-span-2 flex flex-col gap-4 min-h-0">
+          <div className="bg-white rounded-lg border border-gray-200 flex flex-col min-h-0">
+            <header className="p-4 border-b border-gray-100">
+              <h3 className="text-lg font-semibold">Agents</h3>
+              <p className="text-sm text-gray-500">{activeSite ? activeSite.site_id : "Select a site"}</p>
+            </header>
+            <div className="flex-1 overflow-auto">
+              <ul className="divide-y">
+                {agents.map((agent) => (
+                  <li key={agent.agent_id} className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-semibold">{agent.agent_id}</p>
+                        <p className="text-xs text-gray-500">Version: {agent.agent_version || "unknown"}</p>
+                      </div>
+                      <span className="text-xs text-gray-500">{relativeTime(agent.last_heartbeat)}</span>
                     </div>
-                    <span className="text-xs text-gray-500">{relativeTime(agent.last_heartbeat)}</span>
+                    <dl className="mt-2 text-xs text-gray-600 grid grid-cols-2 gap-2">
+                      <div>
+                        <dt className="uppercase tracking-wide">Last Ingest</dt>
+                        <dd>{formatDate(agent.last_ingest)}</dd>
+                      </div>
+                      <div>
+                        <dt className="uppercase tracking-wide">Heartbeat</dt>
+                        <dd>{formatDate(agent.last_heartbeat)}</dd>
+                      </div>
+                    </dl>
+                  </li>
+                ))}
+                {!agents.length && (
+                  <li className="p-4 text-sm text-gray-500">
+                    {activeSiteId ? "No agents have reported in yet" : "Select a site"}
+                  </li>
+                )}
+              </ul>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg border border-gray-200 flex flex-col">
+            <header className="p-4 border-b border-gray-100 flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold">Agent tokens</h3>
+                <p className="text-sm text-gray-500">
+                  Generate bearer tokens for agents posting to {activeSite ? activeSite.site_id : "this site"}.
+                </p>
+              </div>
+              {tokenStatus.loading && <span className="text-xs text-gray-400">Working…</span>}
+            </header>
+
+            {tokenStatus.error && (
+              <p className="px-4 pt-4 text-sm text-red-600">{tokenStatus.error}</p>
+            )}
+            {tokenStatus.success && (
+              <p className="px-4 pt-4 text-sm text-green-700">{tokenStatus.success}</p>
+            )}
+            {tokenStatus.latestToken && (
+              <div className="mx-4 mt-3 mb-1 p-3 rounded border border-blue-200 bg-blue-50">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-xs text-blue-900 font-medium">Newest token</p>
+                    <p className="font-mono text-xs break-all text-blue-900">{tokenStatus.latestToken}</p>
                   </div>
-                  <dl className="mt-2 text-xs text-gray-600 grid grid-cols-2 gap-2">
-                    <div>
-                      <dt className="uppercase tracking-wide">Last Ingest</dt>
-                      <dd>{formatDate(agent.last_ingest)}</dd>
+                  <button
+                    type="button"
+                    onClick={() => copyToken(tokenStatus.latestToken)}
+                    className="shrink-0 inline-flex items-center rounded bg-blue-600 px-3 py-1 text-white text-xs font-semibold"
+                  >
+                    Copy
+                  </button>
+                </div>
+                <p className="text-xs text-blue-800 mt-2">
+                  Paste into <code className="font-mono">ATLAS_AGENT_TOKEN</code> for your agent container.
+                </p>
+              </div>
+            )}
+
+            <form className="p-4 grid gap-3 md:grid-cols-3" onSubmit={handleGenerateToken}>
+              <label className="md:col-span-2 flex flex-col text-sm font-medium text-gray-700">
+                Label (optional)
+                <input
+                  type="text"
+                  value={tokenFormLabel}
+                  onChange={(e) => setTokenFormLabel(e.target.value)}
+                  className="mt-1 rounded border-gray-300 focus:border-blue-500 focus:ring-blue-500"
+                  placeholder="edge01 or branch gateway"
+                  disabled={!activeSiteId}
+                />
+              </label>
+              <div className="flex items-end">
+                <button
+                  type="submit"
+                  className="inline-flex items-center justify-center rounded bg-blue-600 px-4 py-2 text-white text-sm font-semibold disabled:opacity-50"
+                  disabled={!activeSiteId || tokenStatus.loading}
+                >
+                  Generate token
+                </button>
+              </div>
+            </form>
+
+            <div className="px-4 pb-4">
+              <ul className="divide-y rounded border border-gray-200 bg-gray-50">
+                {tokens.map((token) => (
+                  <li key={token.id || token.token} className="p-3 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-mono text-xs break-all text-gray-900">{token.token}</p>
+                      <p className="text-xs text-gray-500">
+                        {token.label || "Agent token"} · {formatDate(token.created_at)}
+                      </p>
                     </div>
-                    <div>
-                      <dt className="uppercase tracking-wide">Heartbeat</dt>
-                      <dd>{formatDate(agent.last_heartbeat)}</dd>
-                    </div>
-                  </dl>
-                </li>
-              ))}
-              {!agents.length && (
-                <li className="p-4 text-sm text-gray-500">
-                  {activeSiteId ? "No agents have reported in yet" : "Select a site"}
-                </li>
-              )}
-            </ul>
+                    <button
+                      type="button"
+                      onClick={() => copyToken(token.token)}
+                      className="shrink-0 inline-flex items-center rounded border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+                    >
+                      Copy
+                    </button>
+                  </li>
+                ))}
+                {!tokens.length && (
+                  <li className="p-3 text-sm text-gray-500 text-center">
+                    {activeSiteId ? "No tokens yet — generate one to deploy an agent." : "Select a site to manage tokens."}
+                  </li>
+                )}
+              </ul>
+            </div>
           </div>
         </section>
       </div>
