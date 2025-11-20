@@ -315,8 +315,9 @@ export default function InventoryPanel() {
 
       {portlessCount > 0 && (
         <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          Ports not reported for {portlessCount} asset{portlessCount === 1 ? "" : "s"}. Run the deep scan agent with
-          <code className="mx-1">--cap-add NET_RAW --cap-add NET_ADMIN</code> (or equivalent) to capture service data.
+          Ports not reported for {portlessCount} assets. Agents deep scan by default—if data stays incomplete, ensure the
+          container runs with <code className="mx-1">NET_RAW</code> and <code className="mx-1">NET_ADMIN</code> capabilities or wait
+          for the next scan cycle.
         </div>
       )}
 
