@@ -213,7 +213,7 @@ export default function SitesPanel() {
   }, [activeSiteId]);
 
   return (
-    <div className="h-full flex flex-col gap-4 min-h-0 overflow-hidden">
+    <div className="h-full flex flex-col gap-4 min-h-0 overflow-y-auto pb-4">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-semibold">Remote Sites</h2>
