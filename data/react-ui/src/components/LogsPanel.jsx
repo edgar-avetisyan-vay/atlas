@@ -70,6 +70,72 @@ function LogFileDropdown({ files, value, onChange }) {
   );
 }
 
+function deriveInsights(lines = []) {
+  const normalized = lines
+    .map((line) => (typeof line === "string" ? line.trim() : ""))
+    .filter(Boolean);
+  const lower = normalized.map((line) => line.toLowerCase());
+
+  const insights = [];
+  const seen = new Set();
+  const add = (key, label, detail, tone = "info") => {
+    if (seen.has(key)) return;
+    seen.add(key);
+    insights.push({ label, detail, tone });
+  };
+
+  const localRun = normalized.find((line) => line.includes("[local-run]"));
+  if (localRun) {
+    add("local-run", "Local helper", "Local runner is launching a host-network deep scan.", "info");
+  }
+
+  const deepScanStart = lower.find((line) => line.includes("starting deep-scan"));
+  if (deepScanStart) {
+    add("deep-scan", "Deep scan starting", "Agent container is starting a discovery cycle.", "success");
+  }
+
+  const remoteStart = lower.find((line) => line.includes("starting remote agent"));
+  if (remoteStart) {
+    add("remote-start", "Remote agent", "Remote agent container is initializing.", "info");
+  }
+
+  const containerId = normalized.find((line) => /^[0-9a-f]{12,64}$/i.test(line));
+  if (containerId) {
+    add(
+      "container-id",
+      "Container running",
+      `Agent container ${containerId.slice(0, 12)}… is active.`,
+      "muted"
+    );
+  }
+
+  const followLogs = lower.find((line) => line.includes("docker logs -f"));
+  if (followLogs) {
+    add("follow", "Follow runtime logs", "Run docker logs -f atlas-agent-local for verbose output.", "muted");
+  }
+
+  const readyLine = lower.find(
+    (line) =>
+      line.includes("agent started") ||
+      line.includes("ready") ||
+      line.includes("listening") ||
+      line.includes("scan complete") ||
+      line.includes("scan finished")
+  );
+  if (readyLine) {
+    add("ready", "Agent ready", normalized[lower.indexOf(readyLine)] || "Agent started successfully.", "success");
+  }
+
+  const errors = normalized.filter((line) => /error|fail|denied|exception/i.test(line));
+  errors.slice(-3).forEach((line, idx) => add(`error-${idx}`, "Recent error", line, "error"));
+
+  if (!normalized.length) {
+    add("empty", "No logs yet", "Start a scan to stream activity here.", "muted");
+  }
+
+  return insights;
+}
+
 export function LogsPanel() {
   const [logFiles, setLogFiles] = useState([]);
   const [selectedFile, setSelectedFile] = useState("");
@@ -79,6 +145,7 @@ export function LogsPanel() {
   const [lineSearch, setLineSearch] = useState("");
   const eventSourceRef = useRef(null);
   const seenLinesRef = useRef(new Set());
+  const insights = useMemo(() => deriveInsights(logLines), [logLines]);
 
   useEffect(() => {
     let aborted = false;
@@ -202,6 +269,33 @@ export function LogsPanel() {
           className="bg-gray-800 text-white px-2 py-1 rounded border border-gray-600 w-full sm:w-64 md:w-80 shrink-0"
         />
       </div>
+
+      {insights.length > 0 && (
+        <div className="bg-gray-800 border border-gray-700 rounded p-3 text-sm text-gray-200 space-y-2">
+          <p className="text-xs uppercase tracking-wide text-gray-400">Agent activity</p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {insights.map((insight, idx) => {
+              const toneClass =
+                insight.tone === "error"
+                  ? "border-rose-400/50 bg-rose-500/10"
+                  : insight.tone === "success"
+                    ? "border-emerald-400/50 bg-emerald-500/10"
+                    : insight.tone === "info"
+                      ? "border-blue-400/50 bg-blue-500/10"
+                      : "border-gray-500/50 bg-gray-800/60";
+              return (
+                <div
+                  key={`${insight.label}-${idx}`}
+                  className={`rounded border px-3 py-2 ${toneClass}`}
+                >
+                  <p className="font-semibold">{insight.label}</p>
+                  <p className="text-xs text-gray-100 leading-relaxed">{insight.detail}</p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
       <div className="overflow-auto bg-black p-4 border border-gray-700 rounded flex-1 min-h-0 whitespace-pre-wrap text-sm">
         {loading ? (
           <p className="text-gray-400">Loading...</p>

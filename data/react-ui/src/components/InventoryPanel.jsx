@@ -260,11 +260,19 @@ export default function InventoryPanel() {
 
   const summary = useMemo(() => summarizeAssets(assets), [assets]);
   const unknownAssets = useMemo(() => assets.filter((a) => a.isUnknown).slice(0, 8), [assets]);
+  const portlessCount = useMemo(
+    () =>
+      assets.filter((asset) => {
+        const ports = (asset.ports ?? "").toString().trim();
+        return !ports || ports === "no_ports" || ports === "—";
+      }).length,
+    [assets]
+  );
 
   const siteOptions = [CONTROLLER_SITE, ...siteSummary.map((s) => ({ id: s.site_id, name: s.site_name || s.site_id })), ALL_SITES];
 
   return (
-    <div className="h-full flex flex-col gap-4 overflow-hidden">
+    <div className="h-full min-h-0 flex flex-col gap-4 overflow-y-auto pb-4">
       <header className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
         <div>
           <h2 className="text-2xl font-semibold text-gray-900">Asset Inventory</h2>
@@ -302,6 +310,13 @@ export default function InventoryPanel() {
           {partialErrors.map((msg) => (
             <div key={msg}>Partial load issue: {msg}</div>
           ))}
+        </div>
+      )}
+
+      {portlessCount > 0 && (
+        <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          Ports not reported for {portlessCount} asset{portlessCount === 1 ? "" : "s"}. Run the deep scan agent with
+          <code className="mx-1">--cap-add NET_RAW --cap-add NET_ADMIN</code> (or equivalent) to capture service data.
         </div>
       )}
 
