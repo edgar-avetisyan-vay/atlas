@@ -163,6 +163,9 @@ func scanAllTcp(ip string, logProgress io.Writer) (PortDetails, string) {
 			osInfo = strings.TrimSpace(osInfo)
 		}
 	}
+	if len(ports.Ports) == 0 {
+		fmt.Fprintf(logProgress, "[nmap] no open or filtered ports parsed for %s; check %s for raw output\n", ip, logFile)
+	}
 	return ports, osInfo
 }
 

@@ -192,6 +192,22 @@ func emitHosts(hosts []HostRecord, opts RemotePayloadOptions) error {
 		fmt.Println("⚠️ No hosts discovered; skipping remote payload")
 		return nil
 	}
+	var withoutPorts, withPorts int
+	for _, h := range hosts {
+		if len(h.Ports) == 0 {
+			withoutPorts++
+		} else {
+			withPorts++
+		}
+	}
+	fmt.Printf("[remote] preparing payload for %d hosts (%d with ports, %d without)\n", len(hosts), withPorts, withoutPorts)
+	if withoutPorts > 0 {
+		for _, h := range hosts {
+			if len(h.Ports) == 0 {
+				fmt.Printf("[remote] host %s has no parsed ports; summary=%q interface=%s\n", h.IP, h.PortSummary, h.InterfaceName)
+			}
+		}
+	}
 	siteName := opts.Config.SiteName
 	if siteName == "" {
 		siteName = opts.Config.SiteID
