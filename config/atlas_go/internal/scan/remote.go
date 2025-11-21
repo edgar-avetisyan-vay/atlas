@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"path"
 	"strings"
@@ -58,13 +59,20 @@ func (rc RemoteConfig) PostPayload(payload RemotePayload) error {
 	if rc.Token != "" {
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", rc.Token))
 	}
+	start := time.Now()
 	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode >= 300 {
-		return fmt.Errorf("remote ingest failed: %s", resp.Status)
+	bodyBytes, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		return fmt.Errorf("remote ingest failed: %s (read body error: %v)", resp.Status, readErr)
 	}
+	elapsed := time.Since(start)
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("remote ingest failed in %s: %s - %s", elapsed, resp.Status, strings.TrimSpace(string(bodyBytes)))
+	}
+	fmt.Printf("[remote] ingest to %s succeeded in %s (%s)\n", endpoint, elapsed, resp.Status)
 	return nil
 }
