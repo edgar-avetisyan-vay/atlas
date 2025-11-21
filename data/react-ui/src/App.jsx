@@ -84,7 +84,7 @@ function Sidebar({ activeTab, setActiveTab, visible, setVisible, onShowDuplicate
         {/* Header */}
         <div className="flex items-center justify-between mb-4 px-4 py-3">
           <div className={`flex items-center space-x-2 ${visible ? "lg:flex" : "lg:hidden"}`}>
-            <h1 className="text-xl font-bold">Atlas</h1>
+            <h1 className="text-xl font-bold">VayScan</h1>
             <BuildTag />
           </div>
           {/* Close (mobile) */}

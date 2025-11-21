@@ -478,7 +478,7 @@ export default function InventoryPanel() {
   };
 
   return (
-    <div className="h-full min-h-0 flex flex-col gap-4 overflow-y-auto pb-4">
+    <div className="h-full min-h-0 flex flex-col gap-4">
       <header className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
         <div>
           <h2 className="text-2xl font-semibold text-gray-900">Asset Inventory</h2>
@@ -549,10 +549,10 @@ export default function InventoryPanel() {
         </button>
       </section>
 
-      <section className="grid gap-4 lg:grid-cols-3 min-h-0 flex-1">
+      <section className="flex-1 min-h-0 flex flex-col">
         <div
           ref={assetsTableRef}
-          className="lg:col-span-2 flex flex-col rounded-lg border border-gray-200 bg-white shadow-sm min-h-0"
+          className="flex flex-col flex-1 rounded-lg border border-gray-200 bg-white shadow-sm min-h-0"
         >
           <div className="flex flex-wrap gap-3 items-center justify-between border-b border-gray-100 px-4 py-3">
             <div>
@@ -877,34 +877,6 @@ export default function InventoryPanel() {
           <div className="border-t border-gray-100 px-4 py-2 text-xs text-gray-500 flex items-center justify-between">
             <span>{loading ? "Refreshing inventory…" : "Inventory snapshot"}</span>
             {lastUpdated && <span>Updated {lastUpdated.toLocaleTimeString()}</span>}
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-4">
-          <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
-            <div className="border-b border-gray-100 px-4 py-3">
-              <h3 className="text-lg font-semibold text-gray-900">Sites overview</h3>
-              <p className="text-sm text-gray-500">Live totals from selected data</p>
-            </div>
-            <div className="max-h-64 overflow-auto divide-y">
-              {Array.from(summary.bySite.entries()).map(([id, info]) => (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => setSelectedSiteId(id)}
-                  className="w-full text-left px-4 py-3 flex items-center justify-between hover:bg-gray-50"
-                >
-                  <div>
-                    <p className="text-sm font-semibold text-gray-900">{info.name}</p>
-                    <p className="text-xs text-gray-500">{info.unknown} unknown</p>
-                  </div>
-                  <span className="text-xl font-bold text-gray-800">{info.total}</span>
-                </button>
-              ))}
-              {!summary.bySite.size && (
-                <div className="px-4 py-6 text-sm text-gray-500">No sites loaded yet</div>
-              )}
-            </div>
           </div>
         </div>
       </section>

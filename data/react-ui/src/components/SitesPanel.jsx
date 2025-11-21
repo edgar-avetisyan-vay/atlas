@@ -259,6 +259,8 @@ export default function SitesPanel() {
     return next;
   }, [sites, search, statusFilter, sortKey]);
 
+  const hasActiveSite = Boolean(activeSiteId);
+
   useEffect(() => {
     let mounted = true;
     setTokenStatus({ loading: false, error: null, success: null, latestToken: null });
@@ -527,176 +529,177 @@ export default function SitesPanel() {
       </div>
 
       <div className="flex-1 grid gap-4 lg:grid-cols-5 min-h-0">
-        <section className="bg-white rounded-lg border border-gray-200 flex flex-col lg:col-span-2 min-h-0">
-          <header className="p-4 border-b border-gray-100 flex items-center justify-between">
-            <div>
-              <h3 className="text-lg font-semibold">Agent tokens</h3>
-              <p className="text-sm text-gray-500">
-                Generate bearer tokens for agents posting to {activeSite ? activeSite.site_id : "this site"}.
-              </p>
-            </div>
-            {tokenStatus.loading && <span className="text-xs text-gray-400">Working…</span>}
-          </header>
-
-          <div className="flex-1 flex flex-col">
-            {tokenStatus.error && (
-              <p className="px-4 pt-4 text-sm text-red-600">{tokenStatus.error}</p>
-            )}
-            {tokenStatus.success && (
-              <p className="px-4 pt-4 text-sm text-green-700">{tokenStatus.success}</p>
-            )}
-            {tokenStatus.latestToken && (
-              <div className="mx-4 mt-3 mb-1 p-3 rounded border border-blue-200 bg-blue-50">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-xs text-blue-900 font-medium">Newest token</p>
-                    <p className="font-mono text-xs break-all text-blue-900">{tokenStatus.latestToken}</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => copyToken(tokenStatus.latestToken)}
-                    className="shrink-0 inline-flex items-center rounded bg-blue-600 px-3 py-1 text-white text-xs font-semibold"
-                  >
-                    Copy
-                  </button>
-                </div>
-                <p className="text-xs text-blue-800 mt-2">
-                  Paste into <code className="font-mono">ATLAS_AGENT_TOKEN</code> for your agent container. Tokens are only shown
-                  once—store it securely now.
+        {hasActiveSite ? (
+          <>
+            <section className="bg-white rounded-lg border border-gray-200 flex flex-col lg:col-span-2 min-h-0">
+              <header className="p-4 border-b border-gray-100 flex flex-col items-center gap-1 text-center">
+                <h3 className="text-lg font-semibold">Agent tokens</h3>
+                <p className="text-sm text-gray-500">
+                  Generate bearer tokens for agents posting to {activeSite ? activeSite.site_id : "this site"}.
                 </p>
-              </div>
-            )}
+                {tokenStatus.loading && <span className="text-xs text-gray-400">Working…</span>}
+              </header>
 
-            <form className="px-4 py-3 border-b border-gray-100 flex flex-col gap-3" onSubmit={handleGenerateToken}>
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:gap-3">
-                <label className="flex-1 text-sm text-gray-700 font-medium">
-                  Token label (optional)
-                  <input
-                    type="text"
-                    value={tokenFormLabel}
-                    onChange={(e) => setTokenFormLabel(e.target.value)}
-                    className="mt-1 w-full rounded border-gray-300 focus:border-blue-500 focus:ring-blue-500"
-                    placeholder="edge01 or branch gateway"
-                    disabled={!activeSiteId}
-                  />
-                </label>
-                <button
-                  type="submit"
-                  className="inline-flex items-center justify-center rounded bg-blue-600 px-4 py-2 text-white text-sm font-semibold disabled:opacity-50"
-                  disabled={!activeSiteId || tokenStatus.loading}
-                >
-                  Generate token
-                </button>
-              </div>
-              {!activeSiteId && (
-                <p className="text-xs text-gray-500">Select a site above to mint new agent tokens.</p>
-              )}
-            </form>
-
-            <div className="px-4 pb-4 flex-1 flex">
-              <ul className="divide-y rounded border border-gray-200 bg-gray-50 w-full max-h-56 overflow-auto self-start">
-                {tokens.map((token) => (
-                  <li key={token.id} className="p-3 flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="font-mono text-xs break-all text-gray-900">{token.masked}</p>
-                      <p className="text-xs text-gray-500">
-                        {token.label || "Agent token"} · Created {formatDate(token.created_at)}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className="text-[11px] text-gray-500">Hidden after creation</span>
+              <div className="flex-1 flex flex-col">
+                {tokenStatus.error && (
+                  <p className="px-4 pt-4 text-sm text-red-600 text-center">{tokenStatus.error}</p>
+                )}
+                {tokenStatus.success && (
+                  <p className="px-4 pt-4 text-sm text-green-700 text-center">{tokenStatus.success}</p>
+                )}
+                {tokenStatus.latestToken && (
+                  <div className="mx-4 mt-3 mb-1 p-3 rounded border border-blue-200 bg-blue-50">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-xs text-blue-900 font-medium">Newest token</p>
+                        <p className="font-mono text-xs break-all text-blue-900">{tokenStatus.latestToken}</p>
+                      </div>
                       <button
                         type="button"
-                        onClick={() => handleRevokeToken(token.id)}
-                        className="inline-flex items-center rounded border border-red-200 bg-red-50 px-2 py-1 text-[11px] font-semibold text-red-700 hover:bg-red-100"
-                        disabled={tokenStatus.loading}
+                        onClick={() => copyToken(tokenStatus.latestToken)}
+                        className="shrink-0 inline-flex items-center rounded bg-blue-600 px-3 py-1 text-white text-xs font-semibold"
                       >
-                        Revoke
+                        Copy
                       </button>
                     </div>
-                  </li>
-                ))}
-                {!tokens.length && (
-                  <li className="p-4 text-sm text-gray-500 text-center flex items-center justify-center h-full">
-                    {activeSiteId ? "No tokens yet — generate one to deploy an agent." : "Select a site to manage tokens."}
-                  </li>
+                    <p className="text-xs text-blue-800 mt-2">
+                      Paste into <code className="font-mono">ATLAS_AGENT_TOKEN</code> for your agent container. Tokens are only shown
+                      once—store it securely now.
+                    </p>
+                  </div>
                 )}
-              </ul>
-            </div>
-          </div>
-        </section>
 
-        <section className="bg-white rounded-lg border border-gray-200 flex flex-col lg:col-span-3 min-h-0">
-          <header className="p-4 border-b border-gray-100 flex items-center justify-between">
-            <div>
-              <h3 className="text-lg font-semibold">Agents</h3>
-              <p className="text-sm text-gray-500">{activeSite ? activeSite.site_id : "Select a site"}</p>
-            </div>
-            {detailLoading && <span className="text-xs text-gray-400">Loading…</span>}
-          </header>
-          {detailError && (
-            <p className="px-4 pt-3 text-sm text-red-600">{detailError}</p>
-          )}
-          <div className="flex-1 overflow-auto flex">
-            <ul className="divide-y flex-1 self-start">
-              {agents.map((agent) => {
-                const health = describeAgentHealth(agent);
-                const toneClass = health.tone === "green"
-                  ? "bg-green-100 text-green-800 border-green-200"
-                  : health.tone === "amber"
-                    ? "bg-amber-100 text-amber-800 border-amber-200"
-                    : "bg-red-100 text-red-800 border-red-200";
+                <form className="px-4 py-3 border-b border-gray-100 flex flex-col gap-3" onSubmit={handleGenerateToken}>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:gap-3">
+                    <label className="flex-1 text-sm text-gray-700 font-medium">
+                      Token label (optional)
+                      <input
+                        type="text"
+                        value={tokenFormLabel}
+                        onChange={(e) => setTokenFormLabel(e.target.value)}
+                        className="mt-1 w-full rounded border-gray-300 focus:border-blue-500 focus:ring-blue-500"
+                        placeholder="edge01 or branch gateway"
+                        disabled={!activeSiteId}
+                      />
+                    </label>
+                    <button
+                      type="submit"
+                      className="inline-flex items-center justify-center rounded bg-blue-600 px-4 py-2 text-white text-sm font-semibold disabled:opacity-50"
+                      disabled={!activeSiteId || tokenStatus.loading}
+                    >
+                      Generate token
+                    </button>
+                  </div>
+                </form>
 
-                return (
-                  <li key={agent.agent_id} className="p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="font-semibold break-words">{agent.agent_id}</p>
-                        <p className="text-xs text-gray-500">Version: {agent.agent_version || "unknown"}</p>
-                        <div className="mt-2 flex items-center gap-2 flex-wrap">
-                          <span className={`inline-flex items-center gap-2 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${toneClass}`}>
-                            <span className="h-2 w-2 rounded-full bg-current opacity-75" />
-                            {health.label}
-                          </span>
-                          <span className="text-xs text-gray-500">{health.detail}</span>
+                <div className="px-4 pb-4 flex-1 flex items-center justify-center">
+                  <ul className="divide-y rounded border border-gray-200 bg-gray-50 w-full max-h-56 overflow-auto self-stretch">
+                    {tokens.map((token) => (
+                      <li key={token.id} className="p-3 flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="font-mono text-xs break-all text-gray-900">{token.masked}</p>
+                          <p className="text-xs text-gray-500">
+                            {token.label || "Agent token"} · Created {formatDate(token.created_at)}
+                          </p>
                         </div>
-                      </div>
-                      <span className="text-xs text-gray-500">{relativeTime(agent.last_heartbeat)}</span>
-                    </div>
-                    <dl className="mt-2 text-xs text-gray-600 grid grid-cols-2 gap-2">
-                      <div>
-                        <dt className="uppercase tracking-wide">Last Ingest</dt>
-                        <dd>{formatDate(agent.last_ingest)}</dd>
-                      </div>
-                      <div>
-                        <dt className="uppercase tracking-wide">Heartbeat</dt>
-                        <dd>{formatDate(agent.last_heartbeat)}</dd>
-                      </div>
-                      <div>
-                        <dt className="uppercase tracking-wide">Status</dt>
-                        <dd>{agent.status || agent.state || "—"}</dd>
-                      </div>
-                      <div>
-                        <dt className="uppercase tracking-wide">Location</dt>
-                        <dd>{agent.hostname || agent.source_host || "unknown"}</dd>
-                      </div>
-                    </dl>
-                    {(agent.last_error || agent.message) && (
-                      <p className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
-                        {agent.last_error || agent.message}
-                      </p>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-[11px] text-gray-500">Hidden after creation</span>
+                          <button
+                            type="button"
+                            onClick={() => handleRevokeToken(token.id)}
+                            className="inline-flex items-center rounded border border-red-200 bg-red-50 px-2 py-1 text-[11px] font-semibold text-red-700 hover:bg-red-100"
+                            disabled={tokenStatus.loading}
+                          >
+                            Revoke
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                    {!tokens.length && (
+                      <li className="p-6 text-sm text-gray-500 text-center flex items-center justify-center h-full">
+                        No tokens yet — generate one to deploy an agent.
+                      </li>
                     )}
-                  </li>
-                );
-              })}
-              {!agents.length && (
-                <li className="p-6 text-sm text-gray-500 flex items-center justify-center">
-                  {activeSiteId ? "No agents have reported in yet" : "Select a site"}
-                </li>
+                  </ul>
+                </div>
+              </div>
+            </section>
+
+            <section className="bg-white rounded-lg border border-gray-200 flex flex-col lg:col-span-3 min-h-0">
+              <header className="p-4 border-b border-gray-100 flex flex-col items-center gap-1 text-center">
+                <h3 className="text-lg font-semibold">Agents</h3>
+                <p className="text-sm text-gray-500">{activeSite ? activeSite.site_id : "Select a site"}</p>
+                {detailLoading && <span className="text-xs text-gray-400">Loading…</span>}
+              </header>
+              {detailError && (
+                <p className="px-4 pt-3 text-sm text-red-600 text-center">{detailError}</p>
               )}
-            </ul>
+              <div className="flex-1 overflow-auto flex items-center justify-center">
+                <ul className="divide-y flex-1 self-stretch">
+                  {agents.map((agent) => {
+                    const health = describeAgentHealth(agent);
+                    const toneClass = health.tone === "green"
+                      ? "bg-green-100 text-green-800 border-green-200"
+                      : health.tone === "amber"
+                        ? "bg-amber-100 text-amber-800 border-amber-200"
+                        : "bg-red-100 text-red-800 border-red-200";
+
+                    return (
+                      <li key={agent.agent_id} className="p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="font-semibold break-words">{agent.agent_id}</p>
+                            <p className="text-xs text-gray-500">Version: {agent.agent_version || "unknown"}</p>
+                            <div className="mt-2 flex items-center gap-2 flex-wrap">
+                              <span className={`inline-flex items-center gap-2 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${toneClass}`}>
+                                <span className="h-2 w-2 rounded-full bg-current opacity-75" />
+                                {health.label}
+                              </span>
+                              <span className="text-xs text-gray-500">{health.detail}</span>
+                            </div>
+                          </div>
+                          <span className="text-xs text-gray-500">{relativeTime(agent.last_heartbeat)}</span>
+                        </div>
+                        <dl className="mt-2 text-xs text-gray-600 grid grid-cols-2 gap-2">
+                          <div>
+                            <dt className="uppercase tracking-wide">Last Ingest</dt>
+                            <dd>{formatDate(agent.last_ingest)}</dd>
+                          </div>
+                          <div>
+                            <dt className="uppercase tracking-wide">Heartbeat</dt>
+                            <dd>{formatDate(agent.last_heartbeat)}</dd>
+                          </div>
+                          <div>
+                            <dt className="uppercase tracking-wide">Status</dt>
+                            <dd>{agent.status || agent.state || "—"}</dd>
+                          </div>
+                          <div>
+                            <dt className="uppercase tracking-wide">Location</dt>
+                            <dd>{agent.hostname || agent.source_host || "unknown"}</dd>
+                          </div>
+                        </dl>
+                        {(agent.last_error || agent.message) && (
+                          <p className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+                            {agent.last_error || agent.message}
+                          </p>
+                        )}
+                      </li>
+                    );
+                  })}
+                  {!agents.length && (
+                    <li className="p-6 text-sm text-gray-500 flex items-center justify-center text-center">
+                      No agents have reported in yet
+                    </li>
+                  )}
+                </ul>
+              </div>
+            </section>
+          </>
+        ) : (
+          <div className="lg:col-span-5 bg-white rounded-lg border border-gray-200 flex items-center justify-center text-center p-10">
+            <p className="text-sm text-gray-600">Select a site to manage agent tokens and view agents.</p>
           </div>
-        </section>
+        )}
       </div>
     </div>
   );

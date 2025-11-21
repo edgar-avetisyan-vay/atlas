@@ -32,14 +32,6 @@ export function NetworkMap() {
   const [selectedNode, setSelectedNode] = useState(null);
   const [selectedRoute, setSelectedRoute] = useState(null);
   const [nodeInfoMap, setNodeInfoMap] = useState({});
-  const [filters, setFilters] = useState({
-    subnet: "",
-    group: "",
-    name: "",
-    status: "",
-    os: "",
-    risk: "",
-  });
   const [rawData, setRawData] = useState({ nonDockerHosts: [], dockerHosts: [] });
   const [externalNode, setExternalNode] = useState(null);
   const [selectedSubnet, setSelectedSubnet] = useState(null);
@@ -47,7 +39,6 @@ export function NetworkMap() {
   const [legendVisible, setLegendVisible] = useState(false);
   const { activeSiteId } = useSiteSource();
   const [hasRoutes, setHasRoutes] = useState(false);
-  const [exportMenuOpen, setExportMenuOpen] = useState(false);
 
   /**
    * Initial data load (hosts + external)
@@ -108,7 +99,7 @@ export function NetworkMap() {
   }, [activeSiteId]);
 
   /**
-   * Build / rebuild network whenever data, filters, layout or external node changes
+   * Build / rebuild network whenever data, layout or external node changes
    */
   useEffect(() => {
     if (!rawData.nonDockerHosts.length && !rawData.dockerHosts.length) return;
@@ -120,7 +111,6 @@ export function NetworkMap() {
     const nexthopLinks = new Set();
     const hostIpToNodeId = new Map();
     const seenNetworks = new Set();
-    const matchingNodeIds = new Set();
 
     const ensureSubnetHub = (subnet, networkName = null) => {
       const hubId = getHubId(subnet);
@@ -216,20 +206,6 @@ export function NetworkMap() {
           group,
           level,
         });
-      }
-
-      const nameMatch = !filters.name || name.toLowerCase().includes(filters.name.toLowerCase());
-      const groupMatch = !filters.group || group === filters.group;
-      const subnetMatch = !filters.subnet || subnet.startsWith(filters.subnet);
-      const statusMatch = !filters.status || online_status === filters.status;
-      const osMatch = !filters.os || os.toLowerCase().includes(filters.os.toLowerCase());
-      const riskMatch = !filters.risk || riskGroup === filters.risk;
-
-      const visible = groupMatch && subnetMatch && statusMatch && osMatch && riskMatch;
-      if (!visible) return;
-
-      if (filters.name && nameMatch) {
-        matchingNodeIds.add(nodeId);
       }
 
       const hubId = group === "normal" ? ensureSubnetHub(subnet) : null;
@@ -377,17 +353,6 @@ export function NetworkMap() {
       };
     }
 
-    // Highlight matches
-    for (const nodeId of matchingNodeIds) {
-      if (nodes.get(nodeId)) {
-        nodes.update({
-          id: nodeId,
-          color: { background: "#facc15", border: "#f59e0b" },
-          borderWidth: 3,
-        });
-      }
-    }
-
     setNodeInfoMap(infoMap);
     setHasRoutes(nexthopLinks.size > 0);
 
@@ -461,14 +426,7 @@ export function NetworkMap() {
       });
       networkRef.current = net;
     }
-  }, [rawData, filters, layoutStyle, externalNode]);
-
-  const osSamples = useMemo(() => {
-    const values = new Set();
-    rawData.nonDockerHosts.forEach((row) => row[3] && values.add(row[3]));
-    rawData.dockerHosts.forEach((row) => row[4] && values.add(row[4]));
-    return Array.from(values).filter(Boolean);
-  }, [rawData]);
+  }, [rawData, layoutStyle, externalNode]);
 
   const layoutDescription = useMemo(() => {
     switch (layoutStyle) {
@@ -481,8 +439,8 @@ export function NetworkMap() {
     }
   }, [layoutStyle]);
 
-  const filterFieldClass =
-    "h-10 w-48 rounded border border-gray-300 px-3 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200 placeholder:text-gray-400";
+  const layoutSelectClass =
+    "h-10 w-44 rounded border border-gray-300 px-3 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200";
   const controlButtonClass =
     "inline-flex items-center gap-1 rounded border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50";
 
@@ -501,99 +459,23 @@ export function NetworkMap() {
     }
   };
 
-  const exportImage = (type = "png") => {
-    const canvas = networkRef.current?.canvas?.frame?.canvas;
-    if (!canvas) return;
-    const mime = type === "jpeg" ? "image/jpeg" : "image/png";
-    const dataUrl = canvas.toDataURL(mime);
-    const link = document.createElement("a");
-    link.href = dataUrl;
-    link.download = `network-map.${type === "jpeg" ? "jpg" : "png"}`;
-    link.click();
-  };
-
-  const exportPdf = () => {
-    const canvas = networkRef.current?.canvas?.frame?.canvas;
-    if (!canvas) return;
-    const dataUrl = canvas.toDataURL("image/png");
-    const win = window.open("", "_blank");
-    if (!win) return;
-    win.document.write(`<html><body style="margin:0"><img src="${dataUrl}" style="width:100%" /></body></html>`);
-    win.document.close();
-    win.focus();
-    setTimeout(() => win.print(), 200);
-  };
-
   return (
     <div className="relative flex h-full w-full min-h-0 flex-col rounded-lg border bg-white p-4">
-      {/* Layout Selector + Filters */}
       <div className="mb-3 flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex flex-wrap items-center gap-2 lg:gap-3 flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <label className="text-sm font-medium text-gray-700" htmlFor="layout-select">
+            Layout
+          </label>
           <select
+            id="layout-select"
             value={layoutStyle}
             onChange={(e) => setLayoutStyle(e.target.value)}
-            className={`${filterFieldClass} w-44`}
+            className={layoutSelectClass}
             aria-label="Layout selector"
           >
             <option value="default">Default layout</option>
             <option value="hierarchical">Hierarchical</option>
             <option value="circular">Circular</option>
-          </select>
-          <input
-            type="text"
-            placeholder="Filter by name"
-            value={filters.name}
-            onChange={(e) => setFilters({ ...filters, name: e.target.value })}
-            className={filterFieldClass}
-          />
-          <select
-            value={filters.group}
-            onChange={(e) => setFilters({ ...filters, group: e.target.value })}
-            className={`${filterFieldClass} w-40`}
-          >
-            <option value="">Filter by group</option>
-            <option value="docker">Docker</option>
-            <option value="normal">Normal</option>
-          </select>
-          <input
-            type="text"
-            placeholder="Filter by subnet (e.g. 10.0.1)"
-            value={filters.subnet}
-            onChange={(e) => setFilters({ ...filters, subnet: e.target.value })}
-            className={filterFieldClass}
-          />
-          <select
-            value={filters.status}
-            onChange={(e) => setFilters({ ...filters, status: e.target.value })}
-            className={`${filterFieldClass} w-40`}
-          >
-            <option value="">Filter by status</option>
-            <option value="online">Online</option>
-            <option value="offline">Offline</option>
-            <option value="unknown">Unknown</option>
-          </select>
-          <input
-            type="text"
-            placeholder="Filter by OS"
-            list="os-suggestions"
-            value={filters.os}
-            onChange={(e) => setFilters({ ...filters, os: e.target.value })}
-            className={filterFieldClass}
-          />
-          <datalist id="os-suggestions">
-            {osSamples.map((os) => (
-              <option key={os} value={os} />
-            ))}
-          </datalist>
-          <select
-            value={filters.risk}
-            onChange={(e) => setFilters({ ...filters, risk: e.target.value })}
-            className={`${filterFieldClass} w-40`}
-          >
-            <option value="">Filter by risk</option>
-            <option value="critical">High risk</option>
-            <option value="elevated">Medium risk</option>
-            <option value="low">Low / unknown</option>
           </select>
         </div>
 
@@ -629,44 +511,6 @@ export function NetworkMap() {
               <span aria-hidden>🖼️</span>
               <span className="hidden xl:inline">Fit</span>
             </button>
-          </div>
-
-          <div className="relative">
-            <button
-              type="button"
-              className={controlButtonClass}
-              onClick={() => setExportMenuOpen((open) => !open)}
-              aria-expanded={exportMenuOpen}
-            >
-              Export
-              <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden>
-                <path d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 10.94l3.71-3.71a.75.75 0 1 1 1.06 1.06l-4.24 4.25a.75.75 0 0 1-1.06 0L5.21 8.29a.75.75 0 0 1 .02-1.08Z" />
-              </svg>
-            </button>
-            {exportMenuOpen && (
-              <div className="absolute right-0 z-20 mt-1 w-40 rounded border border-gray-200 bg-white shadow-lg">
-                <button
-                  type="button"
-                  className="block w-full px-3 py-2 text-left text-sm hover:bg-gray-50"
-                  onClick={() => {
-                    exportImage("png");
-                    setExportMenuOpen(false);
-                  }}
-                >
-                  Save as PNG
-                </button>
-                <button
-                  type="button"
-                  className="block w-full px-3 py-2 text-left text-sm hover:bg-gray-50"
-                  onClick={() => {
-                    exportPdf();
-                    setExportMenuOpen(false);
-                  }}
-                >
-                  Save as PDF
-                </button>
-              </div>
-            )}
           </div>
         </div>
       </div>
