@@ -478,7 +478,7 @@ export default function InventoryPanel() {
   };
 
   return (
-    <div className="h-full min-h-0 flex flex-col gap-4">
+    <div className="h-full min-h-0 flex flex-col gap-4 overflow-hidden">
       <header className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
         <div>
           <h2 className="text-2xl font-semibold text-gray-900">Asset Inventory</h2>
@@ -486,27 +486,9 @@ export default function InventoryPanel() {
             Explore everything the scanner has discovered across controller and remote sites. Unknown entries stay highlighted so we can enrich them with SSH collection soon.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2 items-center">
-          <label className="text-sm text-gray-700">Site filter</label>
-          <select
-            className="rounded border-gray-300 text-sm focus:border-blue-500 focus:ring-blue-500"
-            value={selectedSiteId}
-            onChange={(e) => setSelectedSiteId(e.target.value)}
-          >
-            {siteOptions.map((option) => (
-              <option key={option.id} value={option.id}>
-                {option.name}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            onClick={() => setSelectedSiteId((prev) => prev)}
-            className="px-3 py-1 rounded bg-gray-100 text-sm text-gray-700 hover:bg-gray-200"
-            disabled={loading}
-          >
-            Refresh
-          </button>
+        <div className="text-sm text-gray-600">
+          <p className="font-semibold text-gray-800">Inventory workspace</p>
+          <p>Metrics above, filters + table below with their own scroll.</p>
         </div>
       </header>
 
@@ -528,32 +510,50 @@ export default function InventoryPanel() {
         </div>
       )}
 
-      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-2">
-        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-          <p className="text-xs uppercase tracking-wide text-gray-500">Assets</p>
-          <p className="text-3xl font-bold text-gray-900">{summary.total}</p>
-          <p className="text-sm text-gray-500">Across {summary.bySite.size || 1} site(s)</p>
+      <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+        <p className="text-xs uppercase tracking-wide text-gray-500 mb-3">Network snapshot</p>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
+            <p className="text-xs uppercase tracking-wide text-gray-500">Assets</p>
+            <p className="text-3xl font-bold text-gray-900">{summary.total}</p>
+            <p className="text-sm text-gray-500">Across {summary.bySite.size || 1} site(s)</p>
+          </div>
+          <button
+            type="button"
+            onClick={showUnknownAssets}
+            className={`text-left rounded-lg border p-3 shadow-sm transition hover:border-gray-300 hover:shadow ${
+              unknownOnly ? "border-amber-300 bg-amber-50" : "border-gray-200 bg-white"
+            }`}
+            aria-pressed={unknownOnly}
+          >
+            <p className="text-xs uppercase tracking-wide text-gray-500">Unknown</p>
+            <p className="text-3xl font-bold text-amber-600">{summary.unknown}</p>
+            <p className="text-sm text-gray-500">Missing hostname or OS</p>
+            {unknownOnly && <p className="mt-1 text-xs text-amber-700">Filtering unknown assets</p>}
+          </button>
+          <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
+            <p className="text-xs uppercase tracking-wide text-gray-500">Known OS</p>
+            <p className="text-lg font-semibold text-gray-900">
+              {summary.osCounts.windows + summary.osCounts.linux + summary.osCounts.mac}
+            </p>
+            <p className="text-xs text-gray-500">Windows · Linux · macOS coverage</p>
+          </div>
+          <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
+            <p className="text-xs uppercase tracking-wide text-gray-500">Unknown share</p>
+            <p className="text-lg font-semibold text-gray-900">
+              {summary.total ? Math.round((summary.unknown / summary.total) * 100) : 0}%
+            </p>
+            <p className="text-xs text-gray-500">Use filters to reduce gaps</p>
+          </div>
         </div>
-        <button
-          type="button"
-          onClick={showUnknownAssets}
-          className={`text-left rounded-lg border p-4 shadow-sm transition hover:border-amber-300 hover:shadow ${
-            unknownOnly ? "border-amber-300 bg-amber-50" : "border-gray-200 bg-white"
-          }`}
-          aria-pressed={unknownOnly}
-        >
-          <p className="text-xs uppercase tracking-wide text-gray-500">Unknown</p>
-          <p className="text-3xl font-bold text-amber-600">{summary.unknown}</p>
-          <p className="text-sm text-gray-500">Missing hostname or OS</p>
-          {unknownOnly && <p className="mt-1 text-xs text-amber-700">Filtering unknown assets</p>}
-        </button>
       </section>
 
       <section className="flex-1 min-h-0 flex flex-col">
         <div
           ref={assetsTableRef}
-          className="flex flex-col flex-1 rounded-lg border border-gray-200 bg-white shadow-sm min-h-0"
+          className="flex flex-col flex-1 rounded-lg border border-gray-200 bg-white shadow-sm min-h-0 overflow-hidden"
         >
+          
           <div className="flex flex-wrap gap-3 items-center justify-between border-b border-gray-100 px-4 py-3">
             <div>
               <h3 className="text-lg font-semibold text-gray-900">Assets</h3>
@@ -568,145 +568,163 @@ export default function InventoryPanel() {
               </p>
               {bulkStatus && <p className="text-xs text-blue-700 mt-1">{bulkStatus}</p>}
             </div>
-            <div className="flex flex-wrap gap-2 items-center">
-              <input
-                type="text"
-                placeholder="Search hostname, IP, OS, network"
-                className="w-64 rounded border-gray-300 text-sm focus:border-blue-500 focus:ring-blue-500"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-              />
-              <button
-                type="button"
-                className="rounded border border-gray-300 px-2 py-1 text-sm text-gray-700 hover:bg-gray-100"
-                onClick={() => setAdvancedFiltersOpen((prev) => !prev)}
-                aria-expanded={advancedFiltersOpen}
-              >
-                {advancedFiltersOpen ? "Hide advanced" : "Advanced search"}
-              </button>
-              <select
-                className="rounded border-gray-300 text-sm focus:border-blue-500 focus:ring-blue-500"
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-              >
-                <option value="all">Any status</option>
-                <option value="online">Online</option>
-                <option value="offline">Offline</option>
-                <option value="running">Running</option>
-                <option value="stopped">Stopped</option>
-              </select>
-              <select
-                className="rounded border-gray-300 text-sm focus:border-blue-500 focus:ring-blue-500"
-                value={lastSeenFilter}
-                onChange={(e) => setLastSeenFilter(e.target.value)}
-              >
-                <option value="any">Any time</option>
-                <option value="hour">Last hour</option>
-                <option value="day">Last 24h</option>
-                <option value="week">Last 7d</option>
-                <option value="stale">Older than 24h</option>
-              </select>
-              {selectedSiteId === ALL_SITES.id && (
+            <div className="w-full space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  type="text"
+                  placeholder="Search hostname, IP, OS, network"
+                  className="w-64 flex-1 min-w-[180px] rounded border-gray-300 text-sm focus:border-blue-500 focus:ring-blue-500"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                />
                 <select
                   className="rounded border-gray-300 text-sm focus:border-blue-500 focus:ring-blue-500"
-                  value={siteFilter}
-                  onChange={(e) => setSiteFilter(e.target.value)}
+                  value={selectedSiteId}
+                  onChange={(e) => setSelectedSiteId(e.target.value)}
                 >
-                  <option value="all">Any site</option>
-                  {siteOptions
-                    .filter((o) => o.id !== ALL_SITES.id)
-                    .map((option) => (
-                      <option key={option.id} value={option.id}>
-                        {option.name}
-                      </option>
-                    ))}
+                  {siteOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.name}
+                    </option>
+                  ))}
                 </select>
-              )}
-              <input
-                type="text"
-                value={subnetFilter}
-                onChange={(e) => setSubnetFilter(e.target.value)}
-                className="w-44 rounded border-gray-300 text-sm focus:border-blue-500 focus:ring-blue-500"
-                placeholder="Filter by subnet (10.0.1)"
-              />
-              <select
-                className="rounded border-gray-300 text-sm focus:border-blue-500 focus:ring-blue-500"
-                value={groupBy}
-                onChange={(e) => setGroupBy(e.target.value)}
-              >
-                <option value="none">No grouping</option>
-                <option value="site">Group by site</option>
-                <option value="status">Group by status</option>
-              </select>
-              <select
-                className="rounded border-gray-300 text-sm focus:border-blue-500 focus:ring-blue-500"
-                value={sortConfig.key}
-                onChange={(e) => setSortKey(e.target.value)}
-              >
-                <option value="hostname">Hostname</option>
-                <option value="site">Site</option>
-                <option value="ip">IP</option>
-                <option value="os">OS</option>
-                <option value="network">Network</option>
-                <option value="ports">Ports</option>
-                <option value="status">Status</option>
-                <option value="lastSeen">Last seen</option>
-              </select>
-              <button
-                type="button"
-                className="rounded border border-gray-300 px-2 py-1 text-sm text-gray-700 hover:bg-gray-100"
-                onClick={() =>
-                  setSortConfig((prev) => ({ key: prev.key, direction: prev.direction === "asc" ? "desc" : "asc" }))
-                }
-              >
-                {sortConfig.direction === "asc" ? "⬆" : "⬇"}
-              </button>
-              <label className="inline-flex items-center gap-2 text-sm text-gray-700 align-middle">
+                {selectedSiteId === ALL_SITES.id && (
+                  <select
+                    className="rounded border-gray-300 text-sm focus:border-blue-500 focus:ring-blue-500"
+                    value={siteFilter}
+                    onChange={(e) => setSiteFilter(e.target.value)}
+                  >
+                    <option value="all">Any site</option>
+                    {siteOptions
+                      .filter((o) => o.id !== ALL_SITES.id)
+                      .map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {option.name}
+                        </option>
+                      ))}
+                  </select>
+                )}
+                <select
+                  className="rounded border-gray-300 text-sm focus:border-blue-500 focus:ring-blue-500"
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                >
+                  <option value="all">Any status</option>
+                  <option value="online">Online</option>
+                  <option value="offline">Offline</option>
+                  <option value="running">Running</option>
+                  <option value="stopped">Stopped</option>
+                </select>
+                <select
+                  className="rounded border-gray-300 text-sm focus:border-blue-500 focus:ring-blue-500"
+                  value={lastSeenFilter}
+                  onChange={(e) => setLastSeenFilter(e.target.value)}
+                >
+                  <option value="any">Any time</option>
+                  <option value="hour">Last hour</option>
+                  <option value="day">Last 24h</option>
+                  <option value="week">Last 7d</option>
+                  <option value="stale">Older than 24h</option>
+                </select>
                 <input
-                  type="checkbox"
-                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                  checked={unknownOnly}
-                  onChange={(e) => setUnknownOnly(e.target.checked)}
+                  type="text"
+                  value={subnetFilter}
+                  onChange={(e) => setSubnetFilter(e.target.value)}
+                  className="w-44 rounded border-gray-300 text-sm focus:border-blue-500 focus:ring-blue-500"
+                  placeholder="Subnet prefix"
                 />
-                Unknown only
-              </label>
-              {hasFilters && (
                 <button
                   type="button"
-                  className="rounded border border-gray-300 px-3 py-1 text-sm text-gray-700 hover:bg-gray-100"
-                  onClick={() => {
-                    setQuery("");
-                    setStatusFilter("all");
-                    setSiteFilter("all");
-                    setUnknownOnly(false);
-                    setIpFilter("");
-                    setSubnetFilter("");
-                    setLastSeenFilter("any");
-                  }}
+                  className="rounded border border-gray-300 px-2 py-1 text-sm text-gray-700 hover:bg-gray-100"
+                  onClick={() => setAdvancedFiltersOpen((prev) => !prev)}
+                  aria-expanded={advancedFiltersOpen}
                 >
-                  Clear filters
+                  {advancedFiltersOpen ? "Hide details" : "More filters"}
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedSiteId((prev) => prev)}
+                  className="rounded border border-blue-200 bg-blue-50 px-3 py-1 text-sm font-semibold text-blue-800 hover:bg-blue-100"
+                  disabled={loading}
+                >
+                  Refresh
+                </button>
+                <label className="inline-flex items-center gap-2 text-sm text-gray-700 align-middle ml-auto">
+                  <input
+                    type="checkbox"
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    checked={unknownOnly}
+                    onChange={(e) => setUnknownOnly(e.target.checked)}
+                  />
+                  Unknown only
+                </label>
+                {hasFilters && (
+                  <button
+                    type="button"
+                    className="rounded border border-gray-300 px-3 py-1 text-sm text-gray-700 hover:bg-gray-100"
+                    onClick={() => {
+                      setQuery("");
+                      setStatusFilter("all");
+                      setSiteFilter("all");
+                      setUnknownOnly(false);
+                      setIpFilter("");
+                      setSubnetFilter("");
+                      setLastSeenFilter("any");
+                    }}
+                  >
+                    Clear filters
+                  </button>
+                )}
+              </div>
+              {advancedFiltersOpen && (
+                <div className="flex flex-wrap gap-2 items-center border-t border-gray-100 pt-2">
+                  <label className="flex items-center gap-2 text-sm text-gray-700">
+                    IP / CIDR / range
+                    <input
+                      type="text"
+                      value={ipFilter}
+                      onChange={(e) => setIpFilter(e.target.value)}
+                      className="rounded border-gray-300 text-sm focus:border-blue-500 focus:ring-blue-500"
+                      placeholder="10.0.0.0/24 or 10.0.0.1-10.0.0.20"
+                    />
+                  </label>
+                  <select
+                    className="rounded border-gray-300 text-sm focus:border-blue-500 focus:ring-blue-500"
+                    value={groupBy}
+                    onChange={(e) => setGroupBy(e.target.value)}
+                  >
+                    <option value="none">No grouping</option>
+                    <option value="site">Group by site</option>
+                    <option value="status">Group by status</option>
+                  </select>
+                  <select
+                    className="rounded border-gray-300 text-sm focus:border-blue-500 focus:ring-blue-500"
+                    value={sortConfig.key}
+                    onChange={(e) => setSortKey(e.target.value)}
+                  >
+                    <option value="hostname">Hostname</option>
+                    <option value="site">Site</option>
+                    <option value="ip">IP</option>
+                    <option value="os">OS</option>
+                    <option value="network">Network</option>
+                    <option value="ports">Ports</option>
+                    <option value="status">Status</option>
+                    <option value="lastSeen">Last seen</option>
+                  </select>
+                  <button
+                    type="button"
+                    className="rounded border border-gray-300 px-2 py-1 text-sm text-gray-700 hover:bg-gray-100"
+                    onClick={() =>
+                      setSortConfig((prev) => ({ key: prev.key, direction: prev.direction === "asc" ? "desc" : "asc" }))
+                    }
+                  >
+                    {sortConfig.direction === "asc" ? "⬆" : "⬇"}
+                  </button>
+                  <p className="text-xs text-gray-500">Combine IP, grouping, and sorting without leaving this panel.</p>
+                </div>
               )}
             </div>
           </div>
-
-          {advancedFiltersOpen && (
-            <div className="border-b border-gray-100 bg-gray-50 px-4 py-3 text-sm text-gray-700 flex flex-wrap gap-3 items-center justify-between">
-              <label className="flex items-center gap-2">
-                IP / CIDR / range
-                <input
-                  type="text"
-                  value={ipFilter}
-                  onChange={(e) => setIpFilter(e.target.value)}
-                  className="rounded border-gray-300 text-sm focus:border-blue-500 focus:ring-blue-500"
-                  placeholder="10.0.0.0/24 or 10.0.0.1-10.0.0.20"
-                />
-              </label>
-              <p className="text-xs text-gray-600">
-                Combine quick search with range-aware IP filtering and time bounds to zero in on assets.
-              </p>
-            </div>
-          )}
 
           {selectedAssets.length > 0 && (
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 bg-blue-50 px-4 py-2 text-xs text-blue-900">
@@ -737,9 +755,10 @@ export default function InventoryPanel() {
             </div>
           )}
 
-          <div className="flex-1 overflow-auto">
-            <table className="min-w-full text-xs">
-              <thead className="bg-gray-50 uppercase text-gray-600">
+          <div className="relative flex-1 min-h-0" style={{ maxHeight: "calc(100vh - 360px)" }}>
+            <div className="absolute inset-0 overflow-auto">
+              <table className="min-w-full text-xs">
+                <thead className="bg-gray-50 uppercase text-gray-600 sticky top-0 z-10 shadow-sm">
                 <tr>
                   <th className="px-2 py-2 text-left w-8">
                     <input
@@ -766,7 +785,11 @@ export default function InventoryPanel() {
                       ) : (
                         <button
                           type="button"
-                          className="inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-gray-600"
+                          className={`inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-wide ${
+                            sortConfig.key === (key === "status" ? "status" : key)
+                              ? "text-blue-700"
+                              : "text-gray-600"
+                          }`}
                           onClick={() => setSortKey(key === "status" ? "status" : key)}
                         >
                           {label}
@@ -793,14 +816,21 @@ export default function InventoryPanel() {
                   const rowId = assetRowId(asset);
                   const portsExpanded = Boolean(portExpansions[rowId]);
                   const acknowledged = acknowledgedIds.has(rowId);
-                  const portPreview = asset.portList?.slice(0, 3).join(", ") || "";
-                  const hasMorePorts = (asset.portList?.length || 0) > 3;
-                  const portLabel = asset.portList?.length
-                    ? `${portPreview}${hasMorePorts ? "…" : ""}`
-                    : "—";
+                  const portPreview = asset.portList?.slice(0, 2) || [];
+                  const extraPorts = Math.max((asset.portList?.length || 0) - portPreview.length, 0);
+                  const statusValue = (asset.status || "").toLowerCase();
+                  const statusTone = (() => {
+                    if (["online", "running", "up"].some((label) => statusValue.includes(label))) {
+                      return "bg-green-100 text-green-800";
+                    }
+                    if (["offline", "down", "stopped"].some((label) => statusValue.includes(label))) {
+                      return "bg-red-100 text-red-700";
+                    }
+                    return "bg-gray-200 text-gray-700";
+                  })();
 
                   return (
-                    <tr key={rowId} className={`${asset.isUnknown ? "bg-amber-50" : ""} hover:bg-gray-50`}>
+                    <tr key={rowId} className={`${asset.isUnknown ? "bg-gray-50" : ""} hover:bg-gray-50`}>
                       <td className="px-2 py-1 align-top">
                         <input
                           type="checkbox"
@@ -817,7 +847,14 @@ export default function InventoryPanel() {
                         <div className="text-[11px] text-gray-500 flex items-center gap-1">
                           <span>{asset.group}</span>
                           {acknowledged && <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-700">Confirmed</span>}
-                          {asset.isUnknown && <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">Unknown</span>}
+                          {asset.isUnknown && (
+                            <span
+                              className="inline-flex items-center rounded-full bg-gray-200 px-2 py-0.5 text-[10px] font-semibold text-gray-800"
+                              title={asset.unknownReasons.join("; ") || "Missing hostname or OS"}
+                            >
+                              Unknown
+                            </span>
+                          )}
                         </div>
                       </td>
                       <td className="px-3 py-1 font-mono text-[11px]" title={asset.ip || "—"}>{asset.ip || "—"}</td>
@@ -828,14 +865,27 @@ export default function InventoryPanel() {
                         {asset.network || "—"}
                       </td>
                       <td className="px-3 py-1 text-gray-700">
-                        <button
-                          type="button"
-                          className="max-w-[140px] truncate text-left text-xs underline decoration-dotted text-blue-700 hover:text-blue-900"
-                          onClick={() => togglePorts(rowId)}
-                          title={asset.portList?.join(", ")}
-                        >
-                          {portLabel}
-                        </button>
+                        <div className="flex flex-wrap items-center gap-1">
+                          {portPreview.length === 0 && <span className="text-gray-500">—</span>}
+                          {portPreview.map((port) => (
+                            <span
+                              key={port}
+                              className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-semibold text-gray-700"
+                            >
+                              {port}
+                            </span>
+                          ))}
+                          {extraPorts > 0 && (
+                            <button
+                              type="button"
+                              className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700 hover:bg-blue-100"
+                              onClick={() => togglePorts(rowId)}
+                              title={asset.portList?.join(", ")}
+                            >
+                              +{extraPorts}
+                            </button>
+                          )}
+                        </div>
                         {portsExpanded && asset.portList?.length > 0 && (
                           <div className="mt-1 max-w-xs rounded border border-gray-200 bg-gray-50 px-2 py-1 text-[11px] text-gray-700 whitespace-normal">
                             {asset.portList.join(", ")}
@@ -843,11 +893,7 @@ export default function InventoryPanel() {
                         )}
                       </td>
                       <td className="px-3 py-1">
-                        <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-                          (asset.status || "").toLowerCase().includes("online") || (asset.status || "").toLowerCase().includes("running")
-                            ? "bg-green-100 text-green-800"
-                            : "bg-gray-200 text-gray-700"
-                        }`}>
+                        <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${statusTone}`}>
                           {asset.status || "unknown"}
                         </span>
                       </td>
@@ -873,8 +919,9 @@ export default function InventoryPanel() {
               </tbody>
             </table>
           </div>
+        </div>
 
-          <div className="border-t border-gray-100 px-4 py-2 text-xs text-gray-500 flex items-center justify-between">
+        <div className="border-t border-gray-100 px-4 py-2 text-xs text-gray-500 flex items-center justify-between">
             <span>{loading ? "Refreshing inventory…" : "Inventory snapshot"}</span>
             {lastUpdated && <span>Updated {lastUpdated.toLocaleTimeString()}</span>}
           </div>
