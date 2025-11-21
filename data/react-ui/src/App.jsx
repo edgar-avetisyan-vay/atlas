@@ -62,7 +62,6 @@ function TabIcon({ tab, className = "w-6 h-6" }) {
 }
 
 function Sidebar({ activeTab, setActiveTab, visible, setVisible, onShowDuplicates }) {
-  const stats = useNetworkStats();
   const sidebarRef = useRef(null);
 
   // Collapse on outside click (desktop)
@@ -95,10 +94,6 @@ function Sidebar({ activeTab, setActiveTab, visible, setVisible, onShowDuplicate
         fixed h-full w-64 transform ${visible ? "translate-x-0" : "-translate-x-full"} lg:static lg:h-auto lg:transform-none
         ${visible ? "lg:w-64" : "lg:w-16"}`}
         ref={sidebarRef}
-        onClick={() => {
-          // Expand when clicking the collapsed rail (desktop)
-          if (window.innerWidth >= 1024 && !visible) setVisible(true);
-        }}
       >
         {/* Header */}
         <div className="flex items-center justify-between mb-4 px-4 py-3">
@@ -116,72 +111,72 @@ function Sidebar({ activeTab, setActiveTab, visible, setVisible, onShowDuplicate
         </div>
 
         {/* Single nav list with animated icon-to-label transition */}
-        <div className="px-2 py-1">
+        <div className="px-2 py-1 flex-1 overflow-y-auto">
           <div className="space-y-2">
             {tabs.map((tab) => (
-              <button
-                key={tab}
-                onClick={() => {
-                  setActiveTab(tab);
-                  if (window.innerWidth < 1024) setVisible(false);
-                }}
-                title={tab}
-                className={`w-full flex items-center ${visible ? "justify-start" : "justify-center"} p-2 rounded transition-colors duration-200 ${
-                  activeTab === tab ? "bg-gray-700" : "hover:bg-gray-800"
-                }`}
-              >
-                <TabIcon tab={tab} />
-                <span
-                  className={`overflow-hidden whitespace-nowrap transition-all duration-300 ease-in-out ${
-                    visible ? "opacity-100 ml-3 w-auto" : "opacity-0 ml-0 w-0"
+              <div key={tab} className="relative group">
+                <button
+                  onClick={() => {
+                    setActiveTab(tab);
+                    if (window.innerWidth < 1024) setVisible(false);
+                  }}
+                  title={tab}
+                  aria-label={tab}
+                  className={`w-full flex items-center ${visible ? "justify-start" : "justify-center"} p-2 rounded transition-colors duration-200 ${
+                    activeTab === tab ? "bg-gray-700" : "hover:bg-gray-800"
                   }`}
                 >
-                  {tab}
-                </span>
-              </button>
+                  <TabIcon tab={tab} />
+                  <span
+                    className={`overflow-hidden whitespace-nowrap transition-all duration-300 ease-in-out ${
+                      visible ? "opacity-100 ml-3 w-auto" : "opacity-0 ml-0 w-0"
+                    }`}
+                  >
+                    {tab}
+                  </span>
+                </button>
+                {!visible && (
+                  <span className="pointer-events-none absolute left-14 top-1/2 -translate-y-1/2 rounded bg-black text-white text-xs px-2 py-1 opacity-0 group-hover:opacity-100 shadow-lg">
+                    {tab}
+                  </span>
+                )}
+              </div>
             ))}
           </div>
         </div>
-
-        {/* Stats (hidden on desktop when collapsed) */}
-        <div className={`mt-auto text-sm pt-6 border-t border-gray-700 px-4 ${visible ? "lg:block" : "lg:hidden"}`}>
-          <h2 className="font-semibold mb-1">Network Stats:</h2>
-          <p>
-            Total Hosts: {stats.total}
-            {stats.remoteHosts > 0 && (
-              <span className="text-xs text-blue-200 ml-1">(+{stats.remoteHosts} from sites)</span>
-            )}
-          </p>
-          <p>
-            Docker Hosts: {stats.docker}{" "}
-            <span className="text-xs ml-1">
-              (<span className="text-green-400">{stats.dockerRunning} </span>,{" "}
-              <span className="text-red-400">{stats.dockerStopped} </span>)
-            </span>
-          </p>
-          <p>Normal Hosts: {stats.normal}</p>
-          <p>Unique Subnets: {stats.subnets}</p>
-          {(stats.remoteSites > 0 || stats.remoteAgents > 0) && (
-            <p>
-              Remote: {stats.remoteSites} sites · {stats.remoteAgents} agents
-            </p>
-          )}
-          <p>
-            Duplicate IPs: {" "}
-            <button
-              className="underline text-blue-300 hover:text-blue-200"
-              title="Show duplicate IPs in Hosts table"
-              onClick={() => onShowDuplicates?.()}
-            >
-              {stats.duplicateIps}
-            </button>
-          </p>
-          {stats.updatedAt && (
-            <p className="mt-2 text-gray-400 italic">Updated: {stats.updatedAt}</p>
-          )}
-        </div>
       </div>
     </>
+  );
+}
+
+function NetworkStatsBar({ onShowDuplicates }) {
+  const stats = useNetworkStats();
+
+  const statCards = [
+    { label: "Total hosts", value: stats.total, detail: stats.remoteHosts ? `+${stats.remoteHosts} remote` : null },
+    { label: "Docker", value: `${stats.dockerRunning}/${stats.docker}`, detail: "running/total" },
+    { label: "Subnets", value: stats.subnets, detail: "unique" },
+    { label: "Remote", value: `${stats.remoteSites} sites`, detail: `${stats.remoteAgents} agents` },
+    { label: "Duplicates", value: stats.duplicateIps, detail: "IP collisions", action: onShowDuplicates },
+  ];
+
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5 mb-4">
+      {statCards.map((card) => (
+        <button
+          key={card.label}
+          type="button"
+          onClick={card.action}
+          className={`rounded-lg border bg-white px-4 py-3 text-left shadow-sm transition ${
+            card.action ? "hover:shadow-md hover:border-blue-300" : "cursor-default"
+          }`}
+        >
+          <p className="text-xs uppercase tracking-wide text-gray-500">{card.label}</p>
+          <p className="text-xl font-semibold text-gray-900">{card.value || "—"}</p>
+          <p className="text-xs text-gray-500">{card.detail || stats.updatedAt || "live"}</p>
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -201,7 +196,7 @@ export default function App() {
   return (
     <div className="flex flex-col h-screen bg-gray-100 relative">
       {/* Mobile Header - only visible on mobile; pass menu opener */}
-  <MobileHeader onOpenMenu={() => setSidebarVisible(true)} onOpenLogin={openLogin} />
+      <MobileHeader onOpenMenu={() => setSidebarVisible(true)} onOpenLogin={openLogin} />
 
       <div className="flex flex-1 overflow-hidden">
         <Sidebar
@@ -218,8 +213,18 @@ export default function App() {
         <div className="flex-1 p-6 overflow-hidden flex flex-col">
           {/* Top bar */}
           <div className="flex items-center justify-between mb-4 shrink-0">
-            {/* Left placeholder (kept intentionally empty) */}
-            <div />
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className="hidden lg:inline-flex items-center gap-2 rounded border border-gray-300 bg-white px-3 py-1 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                onClick={() => setSidebarVisible((prev) => !prev)}
+                aria-pressed={sidebarVisible}
+                aria-label={sidebarVisible ? "Collapse navigation" : "Expand navigation"}
+              >
+                ☰
+                <span className="hidden xl:inline">{sidebarVisible ? "Hide menu" : "Show menu"}</span>
+              </button>
+            </div>
 
             {/* Right: desktop-only login button (placeholder for real auth) */}
             <div className="flex items-center">
@@ -236,6 +241,13 @@ export default function App() {
               </button>
             </div>
           </div>
+
+          <NetworkStatsBar
+            onShowDuplicates={() => {
+              setActiveTab("Hosts Table");
+              setHostsShowDuplicates(true);
+            }}
+          />
 
           {isRemoteSource && activeSiteLabel && (
             <div className="mb-4 shrink-0 flex flex-wrap items-center gap-2 rounded border border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-900">
