@@ -96,15 +96,18 @@ func parseNmapPorts(s string) PortDetails {
 	var readable []string
 	var ports []RemotePort
 	for _, p := range parts {
+		p = strings.TrimSpace(p)
 		fields := strings.Split(p, "/")
 		if len(fields) < 5 {
 			continue
 		}
-		state := fields[1]
+		state := strings.ToLower(fields[1])
 		proto := fields[2]
 		service := fields[4]
 		portStr := fields[0]
-		if state == "open" || state == "filtered" {
+
+		isInteresting := strings.Contains(state, "open") || state == "filtered" || state == "unfiltered"
+		if isInteresting {
 			part := fmt.Sprintf("%s/%s", portStr, proto)
 			if service != "" {
 				part = fmt.Sprintf("%s (%s)", part, service)
@@ -143,16 +146,26 @@ func scanAllTcp(ip string, logProgress io.Writer) (PortDetails, string) {
 	defer file.Close()
 
 	ports := PortDetails{Summary: "Unknown"}
+	var rawPortField string
 	var osInfo string
-	// Match all text between Ports: and Ignored State:
-	rePorts := regexp.MustCompile(`Ports: ([^\n]*?)Ignored State:`)
+	// Match text after "Ports:" up to the next tab (fields in -oG are tab-separated).
+	rePorts := regexp.MustCompile(`Ports:\s*([^\t\n]*)`)
 	reOS := regexp.MustCompile(`OS: (.*)`)
 
 	scanner := bufio.NewScanner(file)
+	var sampleLines []string
 	for scanner.Scan() {
 		line := scanner.Text()
+		if len(sampleLines) < 5 {
+			sampleLines = append(sampleLines, line)
+		}
 		if m := rePorts.FindStringSubmatch(line); m != nil {
-			ports = parseNmapPorts(m[1])
+			portField := strings.TrimSpace(m[1])
+			if idx := strings.Index(portField, "Ignored State:"); idx != -1 {
+				portField = strings.TrimSpace(portField[:idx])
+			}
+			rawPortField = portField
+			ports = parseNmapPorts(portField)
 		}
 		if m := reOS.FindStringSubmatch(line); m != nil {
 			rawOs := m[1]
@@ -162,6 +175,18 @@ func scanAllTcp(ip string, logProgress io.Writer) (PortDetails, string) {
 			}
 			osInfo = strings.TrimSpace(osInfo)
 		}
+	}
+	if len(ports.Ports) == 0 {
+		if rawPortField == "" {
+			fmt.Fprintf(logProgress, "[nmap] no Ports field found in greppable output for %s; check %s for raw output\n", ip, logFile)
+		} else {
+			fmt.Fprintf(logProgress, "[nmap] no open or filtered ports parsed for %s; raw Ports field=%q (see %s)\n", ip, rawPortField, logFile)
+		}
+		if len(sampleLines) > 0 {
+			fmt.Fprintf(logProgress, "[nmap] first greppable lines for %s:\n%s\n", ip, strings.Join(sampleLines, "\n"))
+		}
+	} else {
+		fmt.Fprintf(logProgress, "[nmap] parsed %d ports for %s; summary=%s\n", len(ports.Ports), ip, ports.Summary)
 	}
 	return ports, osInfo
 }
@@ -220,6 +245,9 @@ func getMacAddress(ip string) string {
 }
 
 func DeepScan(opts DeepScanOptions) error {
+	if err := os.MkdirAll("/config/logs", 0o755); err != nil {
+		fmt.Printf("⚠️ Unable to create log directory /config/logs: %v\n", err)
+	}
 	// Get all network interfaces
 	interfaces, err := utils.GetAllInterfaces()
 	if err != nil {
@@ -233,6 +261,8 @@ func DeepScan(opts DeepScanOptions) error {
 	lf, _ := os.Create(logFile)
 	defer lf.Close()
 	logProgress := io.MultiWriter(lf, os.Stdout)
+
+	fmt.Fprintf(logProgress, "[deepscan] scanner version=%s (agent build) starting at %s on %d interfaces\n", ScannerVersion, startTime.UTC().Format(time.RFC3339), len(interfaces))
 
 	var hostInfos []HostInfo
 
