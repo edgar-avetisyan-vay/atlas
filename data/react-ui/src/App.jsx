@@ -228,13 +228,6 @@ export default function App() {
             </div>
           </div>
 
-          <NetworkStatsBar
-            onShowDuplicates={() => {
-              setActiveTab("Hosts Table");
-              setHostsShowDuplicates(true);
-            }}
-          />
-
           {isRemoteSource && activeSiteLabel && (
             <div className="mb-4 shrink-0 flex flex-wrap items-center gap-2 rounded border border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-900">
               <span>
@@ -252,6 +245,14 @@ export default function App() {
 
           {/* Content area fills remaining height; individual tabs handle their own internal scroll */}
           <div className="w-full h-full flex-1 min-h-0">
+            {activeTab === "Inventory" && (
+              <NetworkStatsBar
+                onShowDuplicates={() => {
+                  setActiveTab("Hosts Table");
+                  setHostsShowDuplicates(true);
+                }}
+              />
+            )}
             {activeTab === "Network Map" && (
               <NetworkMap onNodeSelect={setSelectedNode} selectedNode={selectedNode} />
             )}

@@ -196,6 +196,8 @@ export default function InventoryPanel() {
   const [lastSeenFilter, setLastSeenFilter] = useState("any");
   const [groupBy, setGroupBy] = useState("none");
   const [sortConfig, setSortConfig] = useState({ key: "hostname", direction: "asc" });
+  const [siteFilter, setSiteFilter] = useState("all");
+  const [subnetFilter, setSubnetFilter] = useState("");
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [acknowledgedIds, setAcknowledgedIds] = useState(new Set());
   const [bulkStatus, setBulkStatus] = useState(null);
@@ -240,6 +242,12 @@ export default function InventoryPanel() {
   useEffect(() => {
     setSelectedIds(new Set());
   }, [assets]);
+
+  useEffect(() => {
+    if (selectedSiteId !== ALL_SITES.id) {
+      setSiteFilter("all");
+    }
+  }, [selectedSiteId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -318,7 +326,9 @@ export default function InventoryPanel() {
     return assets.filter((asset) => {
       if (unknownOnly && !asset.isUnknown) return false;
       if (statusFilter !== "all" && (asset.status || "").toLowerCase() !== statusFilter) return false;
+      if (selectedSiteId === ALL_SITES.id && siteFilter !== "all" && asset.siteId !== siteFilter) return false;
       if (ipFilter && !matchesIpFilter(asset.ip, ipFilter)) return false;
+      if (subnetFilter && !asset.ip.startsWith(subnetFilter)) return false;
       if (lastSeenFilter !== "any") {
         const ts = new Date(asset.lastSeen || 0).getTime();
         const age = now - ts;
@@ -390,9 +400,11 @@ export default function InventoryPanel() {
           ipFilter.trim() ||
           unknownOnly ||
           statusFilter !== "all" ||
-          lastSeenFilter !== "any"
+          lastSeenFilter !== "any" ||
+          (selectedSiteId === ALL_SITES.id && siteFilter !== "all") ||
+          subnetFilter.trim()
       ),
-    [ipFilter, lastSeenFilter, query, statusFilter, unknownOnly]
+    [ipFilter, lastSeenFilter, query, selectedSiteId, siteFilter, statusFilter, subnetFilter, unknownOnly]
   );
   const hiddenCount = hasFilters ? assets.length - filteredAssets.length : 0;
 
@@ -441,6 +453,11 @@ export default function InventoryPanel() {
       key,
       direction: prev.key === key && prev.direction === "asc" ? "desc" : "asc",
     }));
+  };
+
+  const sortIndicator = (key) => {
+    if (sortConfig.key !== key) return "↕";
+    return sortConfig.direction === "asc" ? "↑" : "↓";
   };
 
   const selectedAssets = sortedAssets.filter((asset) => selectedIds.has(assetRowId(asset)));
@@ -589,6 +606,29 @@ export default function InventoryPanel() {
                 <option value="week">Last 7d</option>
                 <option value="stale">Older than 24h</option>
               </select>
+              {selectedSiteId === ALL_SITES.id && (
+                <select
+                  className="rounded border-gray-300 text-sm focus:border-blue-500 focus:ring-blue-500"
+                  value={siteFilter}
+                  onChange={(e) => setSiteFilter(e.target.value)}
+                >
+                  <option value="all">Any site</option>
+                  {siteOptions
+                    .filter((o) => o.id !== ALL_SITES.id)
+                    .map((option) => (
+                      <option key={option.id} value={option.id}>
+                        {option.name}
+                      </option>
+                    ))}
+                </select>
+              )}
+              <input
+                type="text"
+                value={subnetFilter}
+                onChange={(e) => setSubnetFilter(e.target.value)}
+                className="w-44 rounded border-gray-300 text-sm focus:border-blue-500 focus:ring-blue-500"
+                placeholder="Filter by subnet (10.0.1)"
+              />
               <select
                 className="rounded border-gray-300 text-sm focus:border-blue-500 focus:ring-blue-500"
                 value={groupBy}
@@ -621,7 +661,7 @@ export default function InventoryPanel() {
               >
                 {sortConfig.direction === "asc" ? "⬆" : "⬇"}
               </button>
-              <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+              <label className="inline-flex items-center gap-2 text-sm text-gray-700 align-middle">
                 <input
                   type="checkbox"
                   className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
@@ -637,8 +677,10 @@ export default function InventoryPanel() {
                   onClick={() => {
                     setQuery("");
                     setStatusFilter("all");
+                    setSiteFilter("all");
                     setUnknownOnly(false);
                     setIpFilter("");
+                    setSubnetFilter("");
                     setLastSeenFilter("any");
                   }}
                 >
@@ -707,15 +749,32 @@ export default function InventoryPanel() {
                       onChange={toggleSelectAll}
                     />
                   </th>
-                  <th className="px-3 py-2 text-left">Site</th>
-                  <th className="px-3 py-2 text-left">Hostname</th>
-                  <th className="px-3 py-2 text-left">IP</th>
-                  <th className="px-3 py-2 text-left">OS</th>
-                  <th className="px-3 py-2 text-left">Network</th>
-                  <th className="px-3 py-2 text-left">Ports</th>
-                  <th className="px-3 py-2 text-left">Status</th>
-                  <th className="px-3 py-2 text-left">Last seen</th>
-                  <th className="px-3 py-2 text-left">Access</th>
+                  {[
+                    ["site", "Site"],
+                    ["hostname", "Hostname"],
+                    ["ip", "IP"],
+                    ["os", "OS"],
+                    ["network", "Network"],
+                    ["ports", "Ports"],
+                    ["status", "Status"],
+                    ["lastSeen", "Last seen"],
+                    ["access", "Access"],
+                  ].map(([key, label]) => (
+                    <th key={key} className="px-3 py-2 text-left">
+                      {key === "access" ? (
+                        label
+                      ) : (
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-gray-600"
+                          onClick={() => setSortKey(key === "status" ? "status" : key)}
+                        >
+                          {label}
+                          <span aria-hidden>{sortIndicator(key === "status" ? "status" : key)}</span>
+                        </button>
+                      )}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody className="divide-y">
@@ -734,10 +793,15 @@ export default function InventoryPanel() {
                   const rowId = assetRowId(asset);
                   const portsExpanded = Boolean(portExpansions[rowId]);
                   const acknowledged = acknowledgedIds.has(rowId);
+                  const portPreview = asset.portList?.slice(0, 3).join(", ") || "";
+                  const hasMorePorts = (asset.portList?.length || 0) > 3;
+                  const portLabel = asset.portList?.length
+                    ? `${portPreview}${hasMorePorts ? "…" : ""}`
+                    : "—";
 
                   return (
-                    <tr key={rowId} className={`${asset.isUnknown ? "bg-amber-50" : ""} hover:bg-gray-50`}> 
-                      <td className="px-2 py-1.5 align-top">
+                    <tr key={rowId} className={`${asset.isUnknown ? "bg-amber-50" : ""} hover:bg-gray-50`}>
+                      <td className="px-2 py-1 align-top">
                         <input
                           type="checkbox"
                           className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
@@ -745,8 +809,8 @@ export default function InventoryPanel() {
                           onChange={() => toggleSelect(rowId)}
                         />
                       </td>
-                      <td className="px-3 py-1.5 text-[11px] font-semibold text-gray-700">{asset.siteName}</td>
-                      <td className="px-3 py-1.5">
+                      <td className="px-3 py-1 text-[11px] font-semibold text-gray-700">{asset.siteName}</td>
+                      <td className="px-3 py-1">
                         <div className="font-medium text-gray-900 truncate max-w-[140px]" title={asset.hostname || "Unknown"}>
                           {asset.hostname || "Unknown"}
                         </div>
@@ -756,21 +820,21 @@ export default function InventoryPanel() {
                           {asset.isUnknown && <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">Unknown</span>}
                         </div>
                       </td>
-                      <td className="px-3 py-1.5 font-mono text-[11px]" title={asset.ip || "—"}>{asset.ip || "—"}</td>
-                      <td className="px-3 py-1.5 text-gray-800 truncate max-w-[140px]" title={asset.os}>
+                      <td className="px-3 py-1 font-mono text-[11px]" title={asset.ip || "—"}>{asset.ip || "—"}</td>
+                      <td className="px-3 py-1 text-gray-800 truncate max-w-[140px]" title={asset.os}>
                         {asset.os}
                       </td>
-                      <td className="px-3 py-1.5 text-gray-700 truncate max-w-[120px]" title={asset.network || "—"}>
+                      <td className="px-3 py-1 text-gray-700 truncate max-w-[120px]" title={asset.network || "—"}>
                         {asset.network || "—"}
                       </td>
-                      <td className="px-3 py-1.5 text-gray-700">
+                      <td className="px-3 py-1 text-gray-700">
                         <button
                           type="button"
-                          className="text-left text-xs underline decoration-dotted text-blue-700 hover:text-blue-900"
+                          className="max-w-[140px] truncate text-left text-xs underline decoration-dotted text-blue-700 hover:text-blue-900"
                           onClick={() => togglePorts(rowId)}
                           title={asset.portList?.join(", ")}
                         >
-                          {asset.portList?.length ? `${asset.portList.length} open` : "—"}
+                          {portLabel}
                         </button>
                         {portsExpanded && asset.portList?.length > 0 && (
                           <div className="mt-1 max-w-xs rounded border border-gray-200 bg-gray-50 px-2 py-1 text-[11px] text-gray-700 whitespace-normal">
@@ -778,7 +842,7 @@ export default function InventoryPanel() {
                           </div>
                         )}
                       </td>
-                      <td className="px-3 py-1.5">
+                      <td className="px-3 py-1">
                         <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${
                           (asset.status || "").toLowerCase().includes("online") || (asset.status || "").toLowerCase().includes("running")
                             ? "bg-green-100 text-green-800"
@@ -787,10 +851,10 @@ export default function InventoryPanel() {
                           {asset.status || "unknown"}
                         </span>
                       </td>
-                      <td className="px-3 py-1.5 text-[11px] text-gray-600" title={asset.lastSeen || "—"}>
+                      <td className="px-3 py-1 text-[11px] text-gray-600" title={asset.lastSeen || "—"}>
                         {asset.lastSeen || "—"}
                       </td>
-                      <td className="px-3 py-1.5 text-[11px] text-gray-600">
+                      <td className="px-3 py-1 text-[11px] text-gray-600">
                         <span className="inline-flex items-center gap-1 rounded border border-dashed border-blue-200 px-2 py-0.5 text-blue-700">
                           <span className="h-2 w-2 rounded-full bg-blue-400" />
                           SSH enrichment soon
