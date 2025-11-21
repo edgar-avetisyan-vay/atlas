@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useEffect, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import { NetworkMap } from "./components/NetworkMap";
 import { HostsTable } from "./components/HostsTable";
 import { LogsPanel } from "./components/LogsPanel";
@@ -63,20 +63,6 @@ function TabIcon({ tab, className = "w-6 h-6" }) {
 
 function Sidebar({ activeTab, setActiveTab, visible, setVisible, onShowDuplicates }) {
   const sidebarRef = useRef(null);
-
-  // Collapse on outside click (desktop)
-  useEffect(() => {
-    function onDocClick(e) {
-      const isDesktop = window.innerWidth >= 1024;
-      if (!isDesktop) return; // mobile handled by overlay
-      if (!visible) return;
-      if (sidebarRef.current && !sidebarRef.current.contains(e.target)) {
-        setVisible(false);
-      }
-    }
-    document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
-  }, [visible, setVisible]);
 
   return (
     <>
