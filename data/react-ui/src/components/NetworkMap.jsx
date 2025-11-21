@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { Network } from "vis-network";
 import { DataSet } from "vis-data";
 import { SelectedNodePanel } from "./SelectedNodePanel";
@@ -32,12 +32,21 @@ export function NetworkMap() {
   const [selectedNode, setSelectedNode] = useState(null);
   const [selectedRoute, setSelectedRoute] = useState(null);
   const [nodeInfoMap, setNodeInfoMap] = useState({});
-  const [filters, setFilters] = useState({ subnet: "", group: "", name: "" });
+  const [filters, setFilters] = useState({
+    subnet: "",
+    group: "",
+    name: "",
+    status: "",
+    os: "",
+    risk: "",
+  });
   const [rawData, setRawData] = useState({ nonDockerHosts: [], dockerHosts: [] });
   const [externalNode, setExternalNode] = useState(null);
   const [selectedSubnet, setSelectedSubnet] = useState(null);
   const [layoutStyle, setLayoutStyle] = useState("default");
+  const [legendVisible, setLegendVisible] = useState(false);
   const { activeSiteId } = useSiteSource();
+  const [hasRoutes, setHasRoutes] = useState(false);
 
   /**
    * Initial data load (hosts + external)
@@ -174,7 +183,8 @@ export function NetworkMap() {
       nexthop,
       network_name,
       last_seen = "",
-      interface_name = ""
+      interface_name = "",
+      online_status = "unknown"
     ) => {
       if (!ip || ip === "Unknown" || !ip.includes(".")) return;
 
@@ -183,14 +193,25 @@ export function NetworkMap() {
       const nodeId = `${group[0]}-${id}-${ip}-${interface_name || "default"}`;
       const level = group === "docker" ? 4 : 2;
 
+      const shortName = (() => {
+        const base = name?.split(".")[0] || ip || "Host";
+        return base.length > 16 ? `${base.slice(0, 15)}…` : base;
+      })();
+
+      const riskGroup = (() => {
+        const normalizedPorts = (ports || "").toString();
+        if (!normalizedPorts || normalizedPorts === "no_ports") return "low";
+        const portCount = normalizedPorts.split(",").filter(Boolean).length;
+        if (portCount >= 6) return "critical";
+        if (portCount >= 3) return "elevated";
+        return "low";
+      })();
+
       if (!nodes.get(nodeId)) {
-        const hostLabel = interface_name 
-          ? `${name.split(".").slice(0, 2).join(".")}\n(${interface_name})`
-          : `${name.split(".").slice(0, 2).join(".")}`;
         nodes.add({
           id: nodeId,
-          label: hostLabel,
-          title: `${os}\nPorts: ${ports}\nInterface: ${interface_name || "N/A"}`,
+          label: interface_name ? `${shortName}\n(${interface_name})` : shortName,
+          title: `Name: ${name || "Unknown"}\nIP: ${ip}\nOS: ${os}\nStatus: ${online_status}\nPorts: ${ports}\nInterface: ${interface_name || "N/A"}`,
           group,
           level,
         });
@@ -199,8 +220,11 @@ export function NetworkMap() {
       const nameMatch = !filters.name || name.toLowerCase().includes(filters.name.toLowerCase());
       const groupMatch = !filters.group || group === filters.group;
       const subnetMatch = !filters.subnet || subnet.startsWith(filters.subnet);
+      const statusMatch = !filters.status || online_status === filters.status;
+      const osMatch = !filters.os || os.toLowerCase().includes(filters.os.toLowerCase());
+      const riskMatch = !filters.risk || riskGroup === filters.risk;
 
-      const visible = groupMatch && subnetMatch;
+      const visible = groupMatch && subnetMatch && statusMatch && osMatch && riskMatch;
       if (!visible) return;
 
       if (filters.name && nameMatch) {
@@ -230,6 +254,8 @@ export function NetworkMap() {
         nexthop,
         network_name,
         last_seen,
+        online_status,
+        riskGroup,
         interface_name: interface_name || "N/A",
       };
 
@@ -263,7 +289,20 @@ export function NetworkMap() {
     // Hosts - new schema: [id, ip, name, os_details, mac_address, open_ports, next_hop, network_name, interface_name, last_seen, online_status]
     rawData.nonDockerHosts.forEach(
       ([id, ip, name, os, mac, ports, nexthop, network_name, interface_name, last_seen, online_status]) =>
-        addHost(id, ip, name, os, "normal", ports, mac, nexthop, network_name, last_seen, interface_name)
+        addHost(
+          id,
+          ip,
+          name,
+          os,
+          "normal",
+          ports,
+          mac,
+          nexthop,
+          network_name,
+          last_seen,
+          interface_name,
+          online_status
+        )
     );
 
     // NOTE: docker_hosts schema changed (migration). New rows look like:
@@ -271,8 +310,21 @@ export function NetworkMap() {
     // The code below maps the new positions: prefer container_id as the host id (unique container identifier),
     // and use the correct "ip" column from the new schema.
     rawData.dockerHosts.forEach(
-      ([id, container_id, ip, name, os, mac, ports, nexthop, network_name, last_seen]) =>
-        addHost(container_id || id, ip, name, os, "docker", ports, mac, nexthop, network_name, last_seen)
+      ([id, container_id, ip, name, os, mac, ports, nexthop, network_name, last_seen, online_status]) =>
+        addHost(
+          container_id || id,
+          ip,
+          name,
+          os,
+          "docker",
+          ports,
+          mac,
+          nexthop,
+          network_name,
+          last_seen,
+          "",
+          online_status
+        )
     );
 
     // External / Internet node
@@ -336,6 +388,7 @@ export function NetworkMap() {
     }
 
     setNodeInfoMap(infoMap);
+    setHasRoutes(nexthopLinks.size > 0);
 
     // Layout options
     const layoutConfig =
@@ -369,7 +422,7 @@ export function NetworkMap() {
         smooth: true,
         color: { color: "#aaa" },
       },
-      interaction: { hover: true },
+      interaction: { hover: true, zoomView: true, dragView: true, dragNodes: true, navigationButtons: false },
       groups: {
         docker: { color: { background: "#34d399" } },
         normal: { color: { background: "#60a5fa" } },
@@ -409,11 +462,67 @@ export function NetworkMap() {
     }
   }, [rawData, filters, layoutStyle, externalNode]);
 
+  const osSamples = useMemo(() => {
+    const values = new Set();
+    rawData.nonDockerHosts.forEach((row) => row[3] && values.add(row[3]));
+    rawData.dockerHosts.forEach((row) => row[4] && values.add(row[4]));
+    return Array.from(values).filter(Boolean);
+  }, [rawData]);
+
+  const layoutDescription = useMemo(() => {
+    switch (layoutStyle) {
+      case "hierarchical":
+        return "Stacks subnets and hosts top-to-bottom for tree-like clarity.";
+      case "circular":
+        return "Places nodes in rings to highlight peer relationships.";
+      default:
+        return "Balanced layout that adapts to the data size.";
+    }
+  }, [layoutStyle]);
+
+  const handleZoom = (direction) => {
+    const network = networkRef.current;
+    if (!network) return;
+    const scale = network.getScale();
+    const factor = direction === "in" ? 1.2 : 1 / 1.2;
+    const nextScale = Math.min(Math.max(scale * factor, 0.2), 3);
+    network.moveTo({ scale: nextScale });
+  };
+
+  const resetView = () => {
+    if (networkRef.current) {
+      networkRef.current.fit({ animation: true });
+    }
+  };
+
+  const exportImage = (type = "png") => {
+    const canvas = networkRef.current?.canvas?.frame?.canvas;
+    if (!canvas) return;
+    const mime = type === "jpeg" ? "image/jpeg" : "image/png";
+    const dataUrl = canvas.toDataURL(mime);
+    const link = document.createElement("a");
+    link.href = dataUrl;
+    link.download = `network-map.${type === "jpeg" ? "jpg" : "png"}`;
+    link.click();
+  };
+
+  const exportPdf = () => {
+    const canvas = networkRef.current?.canvas?.frame?.canvas;
+    if (!canvas) return;
+    const dataUrl = canvas.toDataURL("image/png");
+    const win = window.open("", "_blank");
+    if (!win) return;
+    win.document.write(`<html><body style="margin:0"><img src="${dataUrl}" style="width:100%" /></body></html>`);
+    win.document.close();
+    win.focus();
+    setTimeout(() => win.print(), 200);
+  };
+
   return (
-    <div className="relative w-full h-full bg-white border rounded p-4 flex flex-col">
+    <div className="relative w-full h-full bg-white border rounded-lg p-4 flex flex-col">
 
       {/* Layout Selector + Filters */}
-      <div className="flex flex-wrap gap-2 mb-4 items-center shrink-0">
+      <div className="flex flex-wrap gap-3 mb-3 items-center shrink-0">
         <select
           value={layoutStyle}
           onChange={(e) => setLayoutStyle(e.target.value)}
@@ -423,6 +532,8 @@ export function NetworkMap() {
           <option value="hierarchical">Hierarchical</option>
           <option value="circular">Circular</option>
         </select>
+
+        <span className="text-xs text-gray-500 italic">{layoutDescription}</span>
 
         <input
           type="text"
@@ -447,6 +558,48 @@ export function NetworkMap() {
           onChange={(e) => setFilters({ ...filters, subnet: e.target.value })}
           className="border p-1 rounded"
         />
+
+        <select
+          value={filters.status}
+          onChange={(e) => setFilters({ ...filters, status: e.target.value })}
+          className="border p-1 rounded"
+        >
+          <option value="">All Statuses</option>
+          <option value="online">Online</option>
+          <option value="offline">Offline</option>
+          <option value="unknown">Unknown</option>
+        </select>
+
+        <input
+          type="text"
+          placeholder="Filter by OS"
+          list="os-suggestions"
+          value={filters.os}
+          onChange={(e) => setFilters({ ...filters, os: e.target.value })}
+          className="border p-1 rounded"
+        />
+        <datalist id="os-suggestions">
+          {osSamples.map((os) => (
+            <option key={os} value={os} />
+          ))}
+        </datalist>
+
+        <select
+          value={filters.risk}
+          onChange={(e) => setFilters({ ...filters, risk: e.target.value })}
+          className="border p-1 rounded"
+        >
+          <option value="">All Risks</option>
+          <option value="critical">High risk</option>
+          <option value="elevated">Medium risk</option>
+          <option value="low">Low / unknown</option>
+        </select>
+
+        {!activeSiteId && (
+          <div className="ml-auto text-xs text-blue-800 bg-blue-50 border border-blue-200 rounded px-3 py-1">
+            Select a site in the "Sites" tab to load a specific location map.
+          </div>
+        )}
       </div>
 
       {error ? (
@@ -454,10 +607,10 @@ export function NetworkMap() {
       ) : (
         <>
           {/* Map area flexes to fill available height */}
-          <div ref={containerRef} className="w-full flex-1 min-h-0 bg-gray-200 rounded" />
+          <div ref={containerRef} className="w-full flex-1 min-h-[520px] bg-gray-100 rounded-lg" />
 
           {/* Overlay the selected node panel so it doesn't change layout height */}
-          <div className="absolute top-20 left-6 z-10 max-w-sm">
+          <div className="absolute top-4 right-4 z-10 max-w-sm">
             <SelectedNodePanel
               node={selectedNode}
               route={selectedRoute}
@@ -465,26 +618,82 @@ export function NetworkMap() {
             />
           </div>
 
-          <div className="absolute bottom-4 right-4 bg-white border shadow rounded p-3 text-sm z-10 w-64">
-            <h3 className="font-semibold mb-2">Legend</h3>
-            <ul className="space-y-1">
-              <li>
-                <span className="inline-block w-3 h-3 bg-blue-400 mr-2 rounded-full"></span>
-                Normal Host
-              </li>
-              <li>
-                <span className="inline-block w-3 h-3 bg-green-400 mr-2 rounded-full"></span>
-                Docker Host
-              </li>
-              <li>
-                <span className="inline-block w-3 h-3 bg-orange-400 mr-2 rounded"></span>
-                Subnet Hub
-              </li>
-              <li>
-                <span className="inline-block w-4 border-t-2 border-dashed border-blue-400 mr-2 align-middle"></span>
-                Inter-subnet Route
-              </li>
-            </ul>
+          <div className="absolute top-20 left-4 z-10 flex flex-col gap-2">
+            <div className="bg-white border rounded shadow px-3 py-2 text-sm flex gap-2 items-center">
+              <button
+                type="button"
+                className="px-2 py-1 border rounded hover:bg-gray-100"
+                onClick={() => handleZoom("in")}
+              >
+                + Zoom
+              </button>
+              <button
+                type="button"
+                className="px-2 py-1 border rounded hover:bg-gray-100"
+                onClick={() => handleZoom("out")}
+              >
+                − Zoom
+              </button>
+              <button
+                type="button"
+                className="px-2 py-1 border rounded hover:bg-gray-100"
+                onClick={resetView}
+              >
+                Fit
+              </button>
+            </div>
+
+            <div className="bg-white border rounded shadow px-3 py-2 text-sm flex gap-2 items-center">
+              <button
+                type="button"
+                className="px-2 py-1 border rounded hover:bg-gray-100"
+                onClick={() => exportImage("png")}
+              >
+                Export PNG
+              </button>
+              <button
+                type="button"
+                className="px-2 py-1 border rounded hover:bg-gray-100"
+                onClick={exportPdf}
+              >
+                Save PDF
+              </button>
+            </div>
+          </div>
+
+          <div className="absolute bottom-4 right-4 z-10">
+            <button
+              type="button"
+              className="bg-white border rounded shadow px-3 py-2 text-sm"
+              onClick={() => setLegendVisible((v) => !v)}
+            >
+              {legendVisible ? "Hide Legend" : "Show Legend"}
+            </button>
+            {legendVisible && (
+              <div className="mt-2 bg-white border shadow rounded p-3 text-sm w-64">
+                <h3 className="font-semibold mb-2">Legend</h3>
+                <ul className="space-y-1">
+                  <li>
+                    <span className="inline-block w-3 h-3 bg-blue-400 mr-2 rounded-full"></span>
+                    Normal Host
+                  </li>
+                  <li>
+                    <span className="inline-block w-3 h-3 bg-green-400 mr-2 rounded-full"></span>
+                    Docker Host
+                  </li>
+                  <li>
+                    <span className="inline-block w-3 h-3 bg-orange-400 mr-2 rounded"></span>
+                    Subnet Hub
+                  </li>
+                  {hasRoutes && (
+                    <li>
+                      <span className="inline-block w-4 border-t-2 border-dashed border-blue-400 mr-2 align-middle"></span>
+                      Inter-subnet Route
+                    </li>
+                  )}
+                </ul>
+              </div>
+            )}
           </div>
         </>
       )}
