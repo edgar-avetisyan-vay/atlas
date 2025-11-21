@@ -58,6 +58,9 @@ export function useNetworkStats(pollIntervalMs = 5000) {
     subnets: 0,
     duplicateIps: 0,
     updatedAt: null,
+    remoteHosts: 0,
+    remoteAgents: 0,
+    remoteSites: 0,
   });
 
   useEffect(() => {
@@ -66,7 +69,10 @@ export function useNetworkStats(pollIntervalMs = 5000) {
 
     async function load() {
       try {
-        const json = await apiGet("/hosts");
+        const [json, remoteStats] = await Promise.all([
+          apiGet("/hosts"),
+          apiGet("/sites/stats").catch(() => null),
+        ]);
         if (!mounted) return;
 
         const normalRows = Array.isArray(json?.[0]) ? json[0] : [];
@@ -173,15 +179,23 @@ export function useNetworkStats(pollIntervalMs = 5000) {
         const dockerCount = uniqueDockerContainers.length;
         const total = normalCount + dockerCount;
 
+        const remoteHostCount = remoteStats?.unique_hosts || 0;
+        const remoteSubnets = new Set(remoteStats?.subnets || []);
+        const combinedSubnets = new Set([...uniqueSubnets, ...remoteSubnets]);
+        const combinedDuplicateIps = duplicateIps + (remoteStats?.duplicate_ips || 0);
+
         setStats({
-          total,
+          total: total + remoteHostCount,
           docker: dockerCount,
           dockerRunning: running,
           dockerStopped: stopped,
-          normal: normalCount,
-          subnets: uniqueSubnets.size,
-          duplicateIps,
+          normal: normalCount + remoteHostCount,
+          subnets: combinedSubnets.size,
+          duplicateIps: combinedDuplicateIps,
           updatedAt: new Date().toLocaleString(),
+          remoteHosts: remoteHostCount,
+          remoteAgents: remoteStats?.agent_count || 0,
+          remoteSites: remoteStats?.site_count || 0,
         });
       } catch (err) {
         // eslint-disable-next-line no-console

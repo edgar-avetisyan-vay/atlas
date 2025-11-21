@@ -137,11 +137,13 @@ export const AtlasAPI = {
   lastScanStatus: () => apiGet("/scripts/last-scan-status"),
   health: () => apiGet("/health"),
   getSiteSummary: () => apiGet("/sites/summary"),
+  getRemoteStats: () => apiGet("/sites/stats"),
   getSiteHosts: (siteId) => apiGet(`/sites/${encodeURIComponent(siteId)}/hosts`),
   getSiteAgents: (siteId) => apiGet(`/sites/${encodeURIComponent(siteId)}/agents`),
   getSiteTokens: (siteId) => apiGet(`/sites/${encodeURIComponent(siteId)}/tokens`),
   createSite: (payload) => apiPost("/sites", { json: payload }),
   createSiteToken: (siteId, payload) => apiPost(`/sites/${encodeURIComponent(siteId)}/tokens`, { json: payload }),
+  deleteSiteToken: (siteId, tokenId) => apiRequest("DELETE", `/sites/${encodeURIComponent(siteId)}/tokens/${tokenId}`),
 };
 
 // Composite health (API + optional UI healthz)

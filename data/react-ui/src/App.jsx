@@ -146,7 +146,12 @@ function Sidebar({ activeTab, setActiveTab, visible, setVisible, onShowDuplicate
         {/* Stats (hidden on desktop when collapsed) */}
         <div className={`mt-auto text-sm pt-6 border-t border-gray-700 px-4 ${visible ? "lg:block" : "lg:hidden"}`}>
           <h2 className="font-semibold mb-1">Network Stats:</h2>
-          <p>Total Hosts: {stats.total}</p>
+          <p>
+            Total Hosts: {stats.total}
+            {stats.remoteHosts > 0 && (
+              <span className="text-xs text-blue-200 ml-1">(+{stats.remoteHosts} from sites)</span>
+            )}
+          </p>
           <p>
             Docker Hosts: {stats.docker}{" "}
             <span className="text-xs ml-1">
@@ -156,6 +161,11 @@ function Sidebar({ activeTab, setActiveTab, visible, setVisible, onShowDuplicate
           </p>
           <p>Normal Hosts: {stats.normal}</p>
           <p>Unique Subnets: {stats.subnets}</p>
+          {(stats.remoteSites > 0 || stats.remoteAgents > 0) && (
+            <p>
+              Remote: {stats.remoteSites} sites · {stats.remoteAgents} agents
+            </p>
+          )}
           <p>
             Duplicate IPs: {" "}
             <button
