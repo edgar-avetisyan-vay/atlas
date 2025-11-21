@@ -18,8 +18,8 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-// Use - for all ports (TCP/UDP)
-const tcpPortArg = "-"
+// Use top ports for faster scans while still providing useful coverage.
+const topTcpPorts = "200"
 
 // const udpPortArg = "-" // UDP scan commented
 
@@ -127,7 +127,8 @@ func parseNmapPorts(s string) PortDetails {
 func scanAllTcp(ip string, logProgress io.Writer) (PortDetails, string) {
 	logFile := fmt.Sprintf("/config/logs/nmap_tcp_%s.log", strings.ReplaceAll(ip, ".", "_"))
 	// Force host up status with -Pn so port scans proceed even when ICMP is filtered.
-	nmapArgs := []string{"-O", "-Pn", "-p-", ip, "-oG", logFile}
+	// Limit to the most common ports and speed up the scan with -T4 to avoid long runtimes.
+	nmapArgs := []string{"-O", "-Pn", "--top-ports", topTcpPorts, "-T4", ip, "-oG", logFile}
 	start := time.Now()
 	cmd := exec.Command("nmap", nmapArgs...)
 	cmd.Stdout = logProgress
