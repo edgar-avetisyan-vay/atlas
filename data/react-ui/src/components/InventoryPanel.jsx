@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AtlasAPI } from "../api";
 
 const CONTROLLER_SITE = { id: "controller", name: "Controller" };
@@ -259,7 +259,6 @@ export default function InventoryPanel() {
   const hiddenCount = hasFilters ? assets.length - filteredAssets.length : 0;
 
   const summary = useMemo(() => summarizeAssets(assets), [assets]);
-  const unknownAssets = useMemo(() => assets.filter((a) => a.isUnknown).slice(0, 8), [assets]);
   const portlessCount = useMemo(
     () =>
       assets.filter((asset) => {
@@ -270,6 +269,14 @@ export default function InventoryPanel() {
   );
 
   const siteOptions = [CONTROLLER_SITE, ...siteSummary.map((s) => ({ id: s.site_id, name: s.site_name || s.site_id })), ALL_SITES];
+  const assetsTableRef = useRef(null);
+
+  const showUnknownAssets = () => {
+    setUnknownOnly(true);
+    setQuery("");
+    setStatusFilter("all");
+    assetsTableRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
 
   return (
     <div className="h-full min-h-0 flex flex-col gap-4 overflow-y-auto pb-4">
@@ -322,31 +329,31 @@ export default function InventoryPanel() {
         </div>
       )}
 
-      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-2">
         <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
           <p className="text-xs uppercase tracking-wide text-gray-500">Assets</p>
           <p className="text-3xl font-bold text-gray-900">{summary.total}</p>
           <p className="text-sm text-gray-500">Across {summary.bySite.size || 1} site(s)</p>
         </div>
-        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+        <button
+          type="button"
+          onClick={showUnknownAssets}
+          className={`text-left rounded-lg border p-4 shadow-sm transition hover:border-amber-300 hover:shadow ${
+            unknownOnly ? "border-amber-300 bg-amber-50" : "border-gray-200 bg-white"
+          }`}
+        >
           <p className="text-xs uppercase tracking-wide text-gray-500">Unknown</p>
           <p className="text-3xl font-bold text-amber-600">{summary.unknown}</p>
           <p className="text-sm text-gray-500">Missing hostname or OS</p>
-        </div>
-        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-          <p className="text-xs uppercase tracking-wide text-gray-500">Linux</p>
-          <p className="text-3xl font-bold text-gray-900">{summary.osCounts.linux}</p>
-          <p className="text-sm text-gray-500">Ready for SSH enrichment</p>
-        </div>
-        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-          <p className="text-xs uppercase tracking-wide text-gray-500">Windows/Mac/Other</p>
-          <p className="text-3xl font-bold text-gray-900">{summary.osCounts.windows + summary.osCounts.mac + summary.osCounts.other}</p>
-          <p className="text-sm text-gray-500">Waiting for agent insights</p>
-        </div>
+          {unknownOnly && <p className="mt-1 text-xs text-amber-700">Filtering unknown assets</p>}
+        </button>
       </section>
 
       <section className="grid gap-4 lg:grid-cols-3 min-h-0 flex-1">
-        <div className="lg:col-span-2 flex flex-col rounded-lg border border-gray-200 bg-white shadow-sm min-h-0">
+        <div
+          ref={assetsTableRef}
+          className="lg:col-span-2 flex flex-col rounded-lg border border-gray-200 bg-white shadow-sm min-h-0"
+        >
           <div className="flex flex-wrap gap-3 items-center justify-between border-b border-gray-100 px-4 py-3">
             <div>
               <h3 className="text-lg font-semibold text-gray-900">Assets</h3>
@@ -484,29 +491,6 @@ export default function InventoryPanel() {
               ))}
               {!summary.bySite.size && (
                 <div className="px-4 py-6 text-sm text-gray-500">No sites loaded yet</div>
-              )}
-            </div>
-          </div>
-
-          <div className="rounded-lg border border-gray-200 bg-white shadow-sm flex-1">
-            <div className="border-b border-gray-100 px-4 py-3">
-              <h3 className="text-lg font-semibold text-gray-900">Needs enrichment</h3>
-              <p className="text-sm text-gray-500">Top entries without hostname/OS</p>
-            </div>
-            <div className="flex-1 overflow-auto divide-y">
-              {unknownAssets.map((asset) => (
-                <div key={`unknown-${asset.siteId}-${asset.id}`} className="px-4 py-3">
-                  <p className="font-medium text-gray-900">{asset.hostname || asset.ip || "Unknown host"}</p>
-                  <p className="text-xs text-gray-500">{asset.siteName}</p>
-                  <ul className="mt-1 text-xs text-amber-700 list-disc list-inside">
-                    {asset.unknownReasons.map((r) => (
-                      <li key={r}>{r}</li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
-              {!unknownAssets.length && (
-                <div className="px-4 py-6 text-sm text-gray-500">Everything here has a hostname and OS</div>
               )}
             </div>
           </div>
