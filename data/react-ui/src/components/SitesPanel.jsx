@@ -20,6 +20,16 @@ function relativeTime(value) {
   return `${Math.floor(deltaSeconds / 86400)}d ago`;
 }
 
+function siteStatus(site) {
+  const lastSignal = site?.last_seen || site?.last_heartbeat || site?.updated_at;
+  const ts = lastSignal ? new Date(lastSignal).getTime() : 0;
+  if (!ts || Number.isNaN(ts)) return { label: "Unreported", tone: "gray" };
+  const ageMinutes = (Date.now() - ts) / (1000 * 60);
+  if (ageMinutes < 10) return { label: "Active", tone: "green" };
+  if (ageMinutes < 60) return { label: "Stale", tone: "amber" };
+  return { label: "Offline", tone: "red" };
+}
+
 function maskTokenDisplay(token) {
   if (!token) return "Hidden";
   if (token.length <= 6) return "••••";
@@ -76,6 +86,10 @@ export default function SitesPanel() {
   const [createStatus, setCreateStatus] = useState({ loading: false, error: null, success: null });
   const [tokenFormLabel, setTokenFormLabel] = useState("");
   const [tokenStatus, setTokenStatus] = useState({ loading: false, error: null, success: null, latestToken: null });
+  const [formErrors, setFormErrors] = useState({});
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [sortKey, setSortKey] = useState("updated_desc");
   const { activeSiteId, activeSiteName, setActiveSite, clearActiveSite } = useSiteSource();
 
   useEffect(() => {
@@ -114,8 +128,14 @@ export default function SitesPanel() {
   async function handleCreateSite(event) {
     event.preventDefault();
     const trimmedId = createForm.site_id.trim();
+    const trimmedName = createForm.site_name.trim();
+    const nextErrors = {};
     if (!trimmedId) {
-      setCreateStatus({ loading: false, error: "Site ID is required", success: null });
+      nextErrors.site_id = "Site ID is required";
+    }
+    setFormErrors(nextErrors);
+    if (Object.keys(nextErrors).length) {
+      setCreateStatus({ loading: false, error: "Please fix the highlighted fields", success: null });
       return;
     }
 
@@ -123,11 +143,12 @@ export default function SitesPanel() {
     try {
       await AtlasAPI.createSite({
         site_id: trimmedId,
-        site_name: createForm.site_name.trim() || undefined,
+        site_name: trimmedName || undefined,
         description: createForm.description.trim() || undefined,
       });
       setCreateStatus({ loading: false, error: null, success: "Site saved" });
-      setActiveSite(trimmedId, createForm.site_name.trim() || trimmedId);
+      setFormErrors({});
+      setActiveSite(trimmedId, trimmedName || trimmedId);
       setCreateForm({ site_id: "", site_name: "", description: "" });
     } catch (err) {
       setCreateStatus({ loading: false, error: err.message || String(err), success: null });
@@ -156,6 +177,18 @@ export default function SitesPanel() {
       setTokens((prev) => [toTokenRecord(response), ...prev]);
     } catch (err) {
       setTokenStatus({ loading: false, error: err.message || String(err), success: null, latestToken: null });
+    }
+  }
+
+  async function handleRevokeToken(tokenId) {
+    if (!activeSiteId) return;
+    setTokenStatus((prev) => ({ ...prev, error: null, success: null }));
+    try {
+      await AtlasAPI.deleteSiteToken(activeSiteId, tokenId);
+      setTokens((prev) => prev.filter((token) => token.id !== tokenId));
+      setTokenStatus((prev) => ({ ...prev, success: "Token revoked" }));
+    } catch (err) {
+      setTokenStatus((prev) => ({ ...prev, error: err.message || String(err) }));
     }
   }
 
@@ -195,6 +228,35 @@ export default function SitesPanel() {
     () => sites.find((s) => s.site_id === activeSiteId) || null,
     [sites, activeSiteId]
   );
+
+  const totals = useMemo(() => {
+    const hosts = sites.reduce((sum, site) => sum + (site.host_count || 0), 0);
+    const agents = sites.reduce((sum, site) => sum + (site.agent_count || 0), 0);
+    const activeSites = sites.filter((site) => siteStatus(site).label === "Active").length;
+    return { hosts, agents, activeSites };
+  }, [sites]);
+
+  const filteredSites = useMemo(() => {
+    const searchLower = search.toLowerCase();
+    let next = sites.filter((site) => {
+      const status = siteStatus(site).label.toLowerCase();
+      const matchesStatus = statusFilter === "all" || status === statusFilter;
+      const matchesSearch =
+        site.site_id.toLowerCase().includes(searchLower) ||
+        (site.site_name || "").toLowerCase().includes(searchLower);
+      return matchesStatus && matchesSearch;
+    });
+
+    next = next.sort((a, b) => {
+      if (sortKey === "hosts") return (b.host_count || 0) - (a.host_count || 0);
+      if (sortKey === "agents") return (b.agent_count || 0) - (a.agent_count || 0);
+      const aTime = new Date(a.updated_at || a.last_seen || a.created_at || 0).getTime();
+      const bTime = new Date(b.updated_at || b.last_seen || b.created_at || 0).getTime();
+      return bTime - aTime;
+    });
+
+    return next;
+  }, [sites, search, statusFilter, sortKey]);
 
   useEffect(() => {
     let mounted = true;
@@ -236,7 +298,7 @@ export default function SitesPanel() {
 
   return (
     <div className="h-full flex flex-col gap-4 min-h-0 overflow-y-auto pb-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <h2 className="text-2xl font-semibold">Remote Sites</h2>
           <p className="text-gray-600">
@@ -245,7 +307,79 @@ export default function SitesPanel() {
             endpoint to populate this dashboard.
           </p>
         </div>
-        {loading && <span className="text-sm text-gray-500">Refreshing…</span>}
+        <div className="flex items-center gap-3">
+          {loading && <span className="text-sm text-gray-500">Refreshing…</span>}
+          <button
+            type="button"
+            onClick={() => clearActiveSite()}
+            className="text-sm text-blue-700 underline decoration-dotted hover:text-blue-900"
+          >
+            Reset selection
+          </button>
+        </div>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="rounded-lg border bg-white p-4">
+          <p className="text-xs uppercase tracking-wide text-gray-500">Sites online</p>
+          <p className="text-2xl font-semibold">{totals.activeSites}</p>
+          <p className="text-xs text-gray-500">of {sites.length} registered</p>
+        </div>
+        <div className="rounded-lg border bg-white p-4">
+          <p className="text-xs uppercase tracking-wide text-gray-500">Agents reporting</p>
+          <p className="text-2xl font-semibold">{totals.agents}</p>
+          <p className="text-xs text-gray-500">based on latest heartbeats</p>
+        </div>
+        <div className="rounded-lg border bg-white p-4">
+          <p className="text-xs uppercase tracking-wide text-gray-500">Hosts discovered</p>
+          <p className="text-2xl font-semibold">{totals.hosts}</p>
+          <p className="text-xs text-gray-500">across all remote sites</p>
+        </div>
+        <div className="rounded-lg border bg-white p-4">
+          <p className="text-xs uppercase tracking-wide text-gray-500">Selection</p>
+          <p className="text-2xl font-semibold">{activeSite ? activeSite.site_id : "—"}</p>
+          <p className="text-xs text-gray-500">Click a card to focus a site</p>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-wrap gap-3 items-center">
+          <label className="text-sm text-gray-600 flex items-center gap-2">
+            <span className="font-medium">Search</span>
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="rounded border-gray-300 focus:border-blue-500 focus:ring-blue-500 text-sm"
+              placeholder="Filter by ID or name"
+            />
+          </label>
+          <label className="text-sm text-gray-600 flex items-center gap-2">
+            <span className="font-medium">Status</span>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="rounded border-gray-300 focus:border-blue-500 focus:ring-blue-500 text-sm"
+            >
+              <option value="all">All</option>
+              <option value="active">Active</option>
+              <option value="stale">Stale</option>
+              <option value="offline">Offline</option>
+            </select>
+          </label>
+        </div>
+        <label className="text-sm text-gray-600 flex items-center gap-2">
+          <span className="font-medium">Sort</span>
+          <select
+            value={sortKey}
+            onChange={(e) => setSortKey(e.target.value)}
+            className="rounded border-gray-300 focus:border-blue-500 focus:ring-blue-500 text-sm"
+          >
+            <option value="updated_desc">Recent updates</option>
+            <option value="hosts">Hosts</option>
+            <option value="agents">Agents</option>
+          </select>
+        </label>
       </div>
 
       {error && (
@@ -270,15 +404,18 @@ export default function SitesPanel() {
         )}
         <form className="mt-4 grid gap-4 md:grid-cols-2" onSubmit={handleCreateSite}>
           <label className="flex flex-col text-sm font-medium text-gray-700">
-            Site ID
+            Site ID <span className="text-red-600">*</span>
             <input
               type="text"
               value={createForm.site_id}
               onChange={(e) => setCreateForm((prev) => ({ ...prev, site_id: e.target.value }))}
-              className="mt-1 rounded border-gray-300 focus:border-blue-500 focus:ring-blue-500"
+              className={`mt-1 rounded focus:border-blue-500 focus:ring-blue-500 ${
+                formErrors.site_id ? "border-red-400" : "border-gray-300"
+              }`}
               placeholder="branch-001"
               required
             />
+            {formErrors.site_id && <span className="text-xs text-red-600 mt-1">{formErrors.site_id}</span>}
           </label>
           <label className="flex flex-col text-sm font-medium text-gray-700">
             Friendly name
@@ -318,7 +455,7 @@ export default function SitesPanel() {
       </section>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 overflow-y-auto max-h-64 pr-1 shrink-0">
-        {sites.length === 0 && !loading && (
+        {filteredSites.length === 0 && !loading && (
           <div className="col-span-full border border-dashed rounded-lg p-6 bg-white">
             <div className="flex flex-col items-center text-center gap-3">
               <div className="w-14 h-14 flex items-center justify-center rounded-full bg-blue-50 text-2xl">
@@ -361,8 +498,17 @@ export default function SitesPanel() {
             </div>
           </div>
         )}
-        {sites.map((site) => {
+        {filteredSites.map((site) => {
           const isActive = activeSiteId === site.site_id;
+          const status = siteStatus(site);
+          const tone =
+            status.tone === "green"
+              ? "text-green-700 bg-green-50 border-green-200"
+              : status.tone === "amber"
+                ? "text-amber-700 bg-amber-50 border-amber-200"
+                : status.tone === "red"
+                  ? "text-red-700 bg-red-50 border-red-200"
+                  : "text-gray-700 bg-gray-50 border-gray-200";
           return (
             <button
               type="button"
@@ -377,7 +523,17 @@ export default function SitesPanel() {
                 <p className="text-sm uppercase tracking-wide text-gray-500">{site.site_id}</p>
                 <p className="text-lg font-semibold">{site.site_name}</p>
               </div>
-              <span className="text-2xl font-bold text-blue-600">{site.host_count}</span>
+              <div className="text-right">
+                <p className="text-2xl font-bold text-blue-600">{site.host_count}</p>
+                <p className="text-xs text-gray-500">Hosts discovered</p>
+              </div>
+            </div>
+            <div className="mt-3 flex items-center justify-between">
+              <span className={`inline-flex items-center gap-2 rounded-full border px-2 py-1 text-xs font-semibold ${tone}`}>
+                <span className="h-2 w-2 rounded-full bg-current opacity-70" />
+                {status.label}
+              </span>
+              <span className="text-xs text-gray-500">Updated {relativeTime(site.updated_at)}</span>
             </div>
             {site.description && (
               <p className="mt-2 text-sm text-gray-600 break-words">{site.description}</p>
@@ -386,10 +542,6 @@ export default function SitesPanel() {
               <div className="flex justify-between">
                 <dt>Agents</dt>
                 <dd>{site.agent_count || 0}</dd>
-              </div>
-              <div className="flex justify-between">
-                <dt>Updated</dt>
-                <dd>{relativeTime(site.updated_at)}</dd>
               </div>
               <div className="flex justify-between">
                 <dt>Last Seen</dt>
@@ -471,10 +623,20 @@ export default function SitesPanel() {
                   <div className="min-w-0">
                     <p className="font-mono text-xs break-all text-gray-900">{token.masked}</p>
                     <p className="text-xs text-gray-500">
-                      {token.label || "Agent token"} · {formatDate(token.created_at)}
+                      {token.label || "Agent token"} · Created {formatDate(token.created_at)}
                     </p>
                   </div>
-                  <span className="text-xs text-gray-500">Hidden after creation</span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-[11px] text-gray-500">Hidden after creation</span>
+                    <button
+                      type="button"
+                      onClick={() => handleRevokeToken(token.id)}
+                      className="inline-flex items-center rounded border border-red-200 bg-red-50 px-2 py-1 text-[11px] font-semibold text-red-700 hover:bg-red-100"
+                      disabled={tokenStatus.loading}
+                    >
+                      Revoke
+                    </button>
+                  </div>
                 </li>
               ))}
               {!tokens.length && (

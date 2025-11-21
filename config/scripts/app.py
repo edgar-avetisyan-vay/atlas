@@ -390,6 +390,18 @@ def _ensure_site_exists(cur: sqlite3.Cursor, site_id: str):
         raise HTTPException(status_code=404, detail=f"Site '{site_id}' not found")
 
 
+def _looks_like_ipv4(value: str) -> bool:
+    if not value or not isinstance(value, str):
+        return False
+    parts = value.split(".")
+    if len(parts) != 4:
+        return False
+    try:
+        return all(0 <= int(p) <= 255 for p in parts)
+    except ValueError:
+        return False
+
+
 @app.post("/sites/{site_id}/tokens", tags=["Remote Sites"])
 def create_site_token(site_id: str, req: SiteTokenRequest):
     trimmed_id = site_id.strip()
@@ -451,6 +463,28 @@ def list_site_tokens(site_id: str):
         {"id": row["id"], "token": row["token"], "label": row["label"], "created_at": row["created_at"]}
         for row in rows
     ]
+
+
+@app.delete("/sites/{site_id}/tokens/{token_id}", status_code=204, tags=["Remote Sites"])
+def delete_site_token(site_id: str, token_id: int):
+    trimmed_id = site_id.strip()
+    if not trimmed_id:
+        raise HTTPException(status_code=400, detail="site_id is required")
+
+    conn = get_db_connection()
+    ensure_remote_tables(conn)
+    cur = conn.cursor()
+    _ensure_site_exists(cur, trimmed_id)
+
+    cur.execute(
+        "DELETE FROM remote_site_tokens WHERE site_id = ? AND id = ?",
+        (trimmed_id, token_id),
+    )
+    conn.commit()
+    conn.close()
+    if cur.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Token not found")
+    return Response(status_code=204)
 
 
 @app.get("/sites/summary", tags=["Remote Sites"])
@@ -542,6 +576,51 @@ def get_site_summary():
         )
 
     return summary
+
+
+@app.get("/sites/stats", tags=["Remote Sites"])
+def get_remote_site_stats():
+    conn = get_db_connection()
+    ensure_remote_tables(conn)
+    cur = conn.cursor()
+
+    cur.execute("SELECT site_id, ip FROM remote_hosts")
+    rows = cur.fetchall()
+
+    ip_counts: Dict[str, int] = {}
+    subnets = set()
+    site_ids = set()
+
+    for row in rows:
+        site_ids.add(row["site_id"])
+        ip = row["ip"]
+        if not _looks_like_ipv4(ip):
+            continue
+        ip_counts[ip] = ip_counts.get(ip, 0) + 1
+        parts = ip.split(".")
+        subnet = ".".join(parts[:3])
+        subnets.add(subnet)
+
+    duplicate_ips = sum(count - 1 for count in ip_counts.values() if count > 1)
+
+    cur.execute("SELECT COUNT(*) FROM remote_agents")
+    agent_count_row = cur.fetchone()
+    agent_count = agent_count_row[0] if agent_count_row else 0
+
+    cur.execute("SELECT COUNT(*) FROM remote_sites")
+    site_count_row = cur.fetchone()
+    registered_sites = site_count_row[0] if site_count_row else 0
+
+    conn.close()
+
+    return {
+        "site_count": max(len(site_ids), registered_sites),
+        "agent_count": agent_count,
+        "unique_hosts": len(ip_counts),
+        "duplicate_ips": duplicate_ips,
+        "subnets": sorted(subnets),
+        "ip_counts": ip_counts,
+    }
 
 
 @app.get("/sites/{site_id}/hosts", tags=["Remote Sites"])
