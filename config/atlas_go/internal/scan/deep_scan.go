@@ -96,6 +96,7 @@ func parseNmapPorts(s string) PortDetails {
 	var readable []string
 	var ports []RemotePort
 	for _, p := range parts {
+		p = strings.TrimSpace(p)
 		fields := strings.Split(p, "/")
 		if len(fields) < 5 {
 			continue
@@ -144,15 +145,19 @@ func scanAllTcp(ip string, logProgress io.Writer) (PortDetails, string) {
 
 	ports := PortDetails{Summary: "Unknown"}
 	var osInfo string
-	// Match all text between Ports: and Ignored State:
-	rePorts := regexp.MustCompile(`Ports: ([^\n]*?)Ignored State:`)
+	// Match text after "Ports:" up to the next tab (fields in -oG are tab-separated).
+	rePorts := regexp.MustCompile(`Ports:\s*([^\t\n]*)`)
 	reOS := regexp.MustCompile(`OS: (.*)`)
 
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := scanner.Text()
 		if m := rePorts.FindStringSubmatch(line); m != nil {
-			ports = parseNmapPorts(m[1])
+			portField := strings.TrimSpace(m[1])
+			if idx := strings.Index(portField, "Ignored State:"); idx != -1 {
+				portField = strings.TrimSpace(portField[:idx])
+			}
+			ports = parseNmapPorts(portField)
 		}
 		if m := reOS.FindStringSubmatch(line); m != nil {
 			rawOs := m[1]
