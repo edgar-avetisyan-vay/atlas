@@ -65,14 +65,10 @@ func (rc RemoteConfig) PostPayload(payload RemotePayload) error {
 		return err
 	}
 	defer resp.Body.Close()
-	bodyBytes, readErr := io.ReadAll(resp.Body)
-	if readErr != nil {
-		return fmt.Errorf("remote ingest failed: %s (read body error: %v)", resp.Status, readErr)
-	}
-	elapsed := time.Since(start)
+	bodyBytes, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 300 {
-		return fmt.Errorf("remote ingest failed in %s: %s - %s", elapsed, resp.Status, strings.TrimSpace(string(bodyBytes)))
+		return fmt.Errorf("remote ingest failed: %s - %s", resp.Status, strings.TrimSpace(string(bodyBytes)))
 	}
-	fmt.Printf("[remote] ingest to %s succeeded in %s (%s)\n", endpoint, elapsed, resp.Status)
+	fmt.Printf("[remote] ingest to %s succeeded in %s (%s)\n", endpoint, time.Since(start), resp.Status)
 	return nil
 }
