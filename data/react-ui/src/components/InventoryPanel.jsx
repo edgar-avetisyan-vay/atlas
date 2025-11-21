@@ -177,6 +177,8 @@ function summarizeAssets(assets) {
   };
 }
 
+const PAGE_SIZE = 15;
+
 export default function InventoryPanel() {
   const [siteSummary, setSiteSummary] = useState([]);
   const [assets, setAssets] = useState([]);
@@ -202,6 +204,8 @@ export default function InventoryPanel() {
   const [acknowledgedIds, setAcknowledgedIds] = useState(new Set());
   const [bulkStatus, setBulkStatus] = useState(null);
   const [portExpansions, setPortExpansions] = useState({});
+  const [page, setPage] = useState(1);
+  const [activeAsset, setActiveAsset] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -350,6 +354,23 @@ export default function InventoryPanel() {
     });
   }, [assets, ipFilter, lastSeenFilter, query, statusFilter, unknownOnly]);
 
+  const totalPages = useMemo(
+    () => Math.max(1, Math.ceil(filteredAssets.length / PAGE_SIZE) || 1),
+    [filteredAssets.length]
+  );
+
+  const pageStart = filteredAssets.length ? (page - 1) * PAGE_SIZE + 1 : 0;
+  const pageEnd = Math.min(filteredAssets.length, page * PAGE_SIZE);
+  const pageRangeLabel = filteredAssets.length ? `${pageStart}–${pageEnd}` : "0";
+
+  useEffect(() => {
+    setPage((prev) => Math.min(prev, totalPages));
+  }, [totalPages]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [query, statusFilter, unknownOnly, selectedSiteId, siteFilter, ipFilter, subnetFilter, lastSeenFilter, groupBy]);
+
   const sortedAssets = useMemo(() => {
     const sorted = [...filteredAssets];
     const dir = sortConfig.direction === "asc" ? 1 : -1;
@@ -375,10 +396,15 @@ export default function InventoryPanel() {
     return sorted;
   }, [filteredAssets, sortConfig]);
 
+  const paginatedAssets = useMemo(() => {
+    const start = (page - 1) * PAGE_SIZE;
+    return sortedAssets.slice(start, start + PAGE_SIZE);
+  }, [page, sortedAssets]);
+
   const groupedAssets = useMemo(() => {
-    if (groupBy === "none") return sortedAssets.map((asset) => ({ type: "asset", asset }));
+    if (groupBy === "none") return paginatedAssets.map((asset) => ({ type: "asset", asset }));
     const map = new Map();
-    sortedAssets.forEach((asset) => {
+    paginatedAssets.forEach((asset) => {
       const key = groupBy === "site" ? asset.siteName || "Unknown site" : (asset.status || "unknown").toLowerCase();
       const label = groupBy === "site" ? key : key.charAt(0).toUpperCase() + key.slice(1);
       if (!map.has(key)) map.set(key, []);
@@ -391,7 +417,7 @@ export default function InventoryPanel() {
         { type: "group", label, count: items.length },
         ...items.map((asset) => ({ type: "asset", asset })),
       ]);
-  }, [groupBy, sortedAssets]);
+  }, [groupBy, paginatedAssets]);
 
   const hasFilters = useMemo(
     () =>
@@ -421,7 +447,7 @@ export default function InventoryPanel() {
   const siteOptions = [CONTROLLER_SITE, ...siteSummary.map((s) => ({ id: s.site_id, name: s.site_name || s.site_id })), ALL_SITES];
   const assetsTableRef = useRef(null);
   const assetRowId = (asset) => `${asset.siteId}-${asset.id}`;
-  const visibleAssetIds = sortedAssets.map(assetRowId);
+  const visibleAssetIds = paginatedAssets.map(assetRowId);
   const selectedVisibleIds = visibleAssetIds.filter((id) => selectedIds.has(id));
   const allSelected = visibleAssetIds.length > 0 && selectedVisibleIds.length === visibleAssetIds.length;
   const toggleSelect = (id) => {
@@ -445,6 +471,7 @@ export default function InventoryPanel() {
     setUnknownOnly(true);
     setQuery("");
     setStatusFilter("all");
+    setPage(1);
     assetsTableRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
@@ -460,7 +487,7 @@ export default function InventoryPanel() {
     return sortConfig.direction === "asc" ? "↑" : "↓";
   };
 
-  const selectedAssets = sortedAssets.filter((asset) => selectedIds.has(assetRowId(asset)));
+  const selectedAssets = paginatedAssets.filter((asset) => selectedIds.has(assetRowId(asset)));
   const handleBulkConfirm = () => {
     if (!selectedAssets.length) return;
     setAcknowledgedIds((prev) => {
@@ -477,6 +504,9 @@ export default function InventoryPanel() {
     setBulkStatus("Filtering unknown assets");
   };
 
+  const handleAssetClick = (asset) => setActiveAsset(asset);
+  const closeAssetDetails = () => setActiveAsset(null);
+
   return (
     <div className="h-full min-h-0 flex flex-col gap-4 overflow-hidden">
       <header className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
@@ -488,7 +518,7 @@ export default function InventoryPanel() {
         </div>
         <div className="text-sm text-gray-600">
           <p className="font-semibold text-gray-800">Inventory workspace</p>
-          <p>Metrics above, filters + table below with their own scroll.</p>
+          <p>Assets first, with filters and details, followed by rollup metrics below.</p>
         </div>
       </header>
 
@@ -510,44 +540,6 @@ export default function InventoryPanel() {
         </div>
       )}
 
-      <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-        <p className="text-xs uppercase tracking-wide text-gray-500 mb-3">Network snapshot</p>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
-            <p className="text-xs uppercase tracking-wide text-gray-500">Assets</p>
-            <p className="text-3xl font-bold text-gray-900">{summary.total}</p>
-            <p className="text-sm text-gray-500">Across {summary.bySite.size || 1} site(s)</p>
-          </div>
-          <button
-            type="button"
-            onClick={showUnknownAssets}
-            className={`text-left rounded-lg border p-3 shadow-sm transition hover:border-gray-300 hover:shadow ${
-              unknownOnly ? "border-amber-300 bg-amber-50" : "border-gray-200 bg-white"
-            }`}
-            aria-pressed={unknownOnly}
-          >
-            <p className="text-xs uppercase tracking-wide text-gray-500">Unknown</p>
-            <p className="text-3xl font-bold text-amber-600">{summary.unknown}</p>
-            <p className="text-sm text-gray-500">Missing hostname or OS</p>
-            {unknownOnly && <p className="mt-1 text-xs text-amber-700">Filtering unknown assets</p>}
-          </button>
-          <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
-            <p className="text-xs uppercase tracking-wide text-gray-500">Known OS</p>
-            <p className="text-lg font-semibold text-gray-900">
-              {summary.osCounts.windows + summary.osCounts.linux + summary.osCounts.mac}
-            </p>
-            <p className="text-xs text-gray-500">Windows · Linux · macOS coverage</p>
-          </div>
-          <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
-            <p className="text-xs uppercase tracking-wide text-gray-500">Unknown share</p>
-            <p className="text-lg font-semibold text-gray-900">
-              {summary.total ? Math.round((summary.unknown / summary.total) * 100) : 0}%
-            </p>
-            <p className="text-xs text-gray-500">Use filters to reduce gaps</p>
-          </div>
-        </div>
-      </section>
-
       <section className="flex-1 min-h-0 flex flex-col">
         <div
           ref={assetsTableRef}
@@ -555,15 +547,15 @@ export default function InventoryPanel() {
         >
           
           <div className="flex flex-wrap gap-3 items-center justify-between border-b border-gray-100 px-4 py-3">
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900">Assets</h3>
-              <p className="text-sm text-gray-500">
-                Showing {filteredAssets.length} of {assets.length} assets
-                {selectedSiteId !== ALL_SITES.id && siteOptions.find((o) => o.id === selectedSiteId)
-                  ? ` at ${siteOptions.find((o) => o.id === selectedSiteId)?.name}`
-                  : ""}
-                {hiddenCount > 0 && (
-                  <span className="ml-2 text-amber-700">({hiddenCount} hidden by filters)</span>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Assets</h3>
+                <p className="text-sm text-gray-500">
+                  Showing {filteredAssets.length ? `${pageRangeLabel}` : 0} of {filteredAssets.length} assets
+                  {selectedSiteId !== ALL_SITES.id && siteOptions.find((o) => o.id === selectedSiteId)
+                    ? ` at ${siteOptions.find((o) => o.id === selectedSiteId)?.name}`
+                    : ""}
+                  {hiddenCount > 0 && (
+                    <span className="ml-2 text-amber-700">({hiddenCount} hidden by filters)</span>
                 )}
               </p>
               {bulkStatus && <p className="text-xs text-blue-700 mt-1">{bulkStatus}</p>}
@@ -837,13 +829,19 @@ export default function InventoryPanel() {
                           className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                           checked={selectedIds.has(rowId)}
                           onChange={() => toggleSelect(rowId)}
+                          onClick={(e) => e.stopPropagation()}
                         />
                       </td>
                       <td className="px-3 py-1 text-[11px] font-semibold text-gray-700">{asset.siteName}</td>
                       <td className="px-3 py-1">
-                        <div className="font-medium text-gray-900 truncate max-w-[140px]" title={asset.hostname || "Unknown"}>
+                        <button
+                          type="button"
+                          onClick={() => handleAssetClick(asset)}
+                          className="font-medium text-gray-900 truncate max-w-[140px] text-left hover:text-blue-700 hover:underline"
+                          title={asset.hostname || "Unknown"}
+                        >
                           {asset.hostname || "Unknown"}
-                        </div>
+                        </button>
                         <div className="text-[11px] text-gray-500 flex items-center gap-1">
                           <span>{asset.group}</span>
                           {acknowledged && <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-700">Confirmed</span>}
@@ -921,12 +919,160 @@ export default function InventoryPanel() {
           </div>
         </div>
 
-        <div className="border-t border-gray-100 px-4 py-2 text-xs text-gray-500 flex items-center justify-between">
+        <div className="border-t border-gray-100">
+          <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className="rounded border border-gray-300 px-3 py-1 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+                disabled={page === 1}
+              >
+                Previous
+              </button>
+              <span className="text-sm text-gray-700">Page {page} of {totalPages}</span>
+              <button
+                type="button"
+                className="rounded border border-gray-300 px-3 py-1 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+                disabled={page >= totalPages || !filteredAssets.length}
+              >
+                Next
+              </button>
+            </div>
+            <div className="text-xs text-gray-500">
+              Showing {pageRangeLabel} of {filteredAssets.length} matching asset{filteredAssets.length === 1 ? "" : "s"}
+            </div>
+          </div>
+          <div className="border-t border-gray-100 px-4 py-2 text-xs text-gray-500 flex items-center justify-between">
             <span>{loading ? "Refreshing inventory…" : "Inventory snapshot"}</span>
             {lastUpdated && <span>Updated {lastUpdated.toLocaleTimeString()}</span>}
           </div>
         </div>
       </section>
+
+      <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+        <p className="text-xs uppercase tracking-wide text-gray-500 mb-3">Network snapshot</p>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
+            <p className="text-xs uppercase tracking-wide text-gray-500">Assets</p>
+            <p className="text-3xl font-bold text-gray-900">{summary.total}</p>
+            <p className="text-sm text-gray-500">Across {summary.bySite.size || 1} site(s)</p>
+          </div>
+          <button
+            type="button"
+            onClick={showUnknownAssets}
+            className={`text-left rounded-lg border p-3 shadow-sm transition hover:border-gray-300 hover:shadow ${
+              unknownOnly ? "border-amber-300 bg-amber-50" : "border-gray-200 bg-white"
+            }`}
+            aria-pressed={unknownOnly}
+          >
+            <p className="text-xs uppercase tracking-wide text-gray-500">Unknown</p>
+            <p className="text-3xl font-bold text-amber-600">{summary.unknown}</p>
+            <p className="text-sm text-gray-500">Missing hostname or OS</p>
+            {unknownOnly && <p className="mt-1 text-xs text-amber-700">Filtering unknown assets</p>}
+          </button>
+          <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
+            <p className="text-xs uppercase tracking-wide text-gray-500">Known OS</p>
+            <p className="text-lg font-semibold text-gray-900">
+              {summary.osCounts.windows + summary.osCounts.linux + summary.osCounts.mac}
+            </p>
+            <p className="text-xs text-gray-500">Windows · Linux · macOS coverage</p>
+          </div>
+          <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
+            <p className="text-xs uppercase tracking-wide text-gray-500">Unknown share</p>
+            <p className="text-lg font-semibold text-gray-900">
+              {summary.total ? Math.round((summary.unknown / summary.total) * 100) : 0}%
+            </p>
+            <p className="text-xs text-gray-500">Use filters to reduce gaps</p>
+          </div>
+        </div>
+      </section>
+
+      {activeAsset && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+          role="dialog"
+          aria-modal="true"
+          onClick={closeAssetDetails}
+        >
+          <div
+            className="relative w-full max-w-3xl rounded-lg bg-white p-6 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              className="absolute right-3 top-3 rounded p-1 text-gray-500 hover:bg-gray-100"
+              onClick={closeAssetDetails}
+              aria-label="Close asset details"
+            >
+              ✕
+            </button>
+            <div className="flex flex-col gap-1 pr-10">
+              <h3 className="text-xl font-semibold text-gray-900">{activeAsset.hostname || "Unknown asset"}</h3>
+              <p className="text-sm text-gray-600">
+                {activeAsset.siteName} · {activeAsset.group} · IP {activeAsset.ip || "—"}
+              </p>
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <div className="rounded border border-gray-200 bg-gray-50 p-3">
+                <p className="text-xs uppercase tracking-wide text-gray-500">Operating system</p>
+                <p className="text-sm font-medium text-gray-900">{activeAsset.os || "Unknown"}</p>
+              </div>
+              <div className="rounded border border-gray-200 bg-gray-50 p-3">
+                <p className="text-xs uppercase tracking-wide text-gray-500">Status</p>
+                <p className="text-sm font-medium text-gray-900">{activeAsset.status || "Unknown"}</p>
+              </div>
+              <div className="rounded border border-gray-200 bg-gray-50 p-3">
+                <p className="text-xs uppercase tracking-wide text-gray-500">Network</p>
+                <p className="text-sm font-medium text-gray-900">{activeAsset.network || "—"}</p>
+              </div>
+              <div className="rounded border border-gray-200 bg-gray-50 p-3">
+                <p className="text-xs uppercase tracking-wide text-gray-500">Interface</p>
+                <p className="text-sm font-medium text-gray-900">{activeAsset.interfaceName || "—"}</p>
+              </div>
+              <div className="rounded border border-gray-200 bg-gray-50 p-3">
+                <p className="text-xs uppercase tracking-wide text-gray-500">MAC</p>
+                <p className="text-sm font-medium text-gray-900">{activeAsset.mac || "—"}</p>
+              </div>
+              <div className="rounded border border-gray-200 bg-gray-50 p-3">
+                <p className="text-xs uppercase tracking-wide text-gray-500">Last seen</p>
+                <p className="text-sm font-medium text-gray-900">{activeAsset.lastSeen || "—"}</p>
+              </div>
+            </div>
+
+            <div className="mt-4">
+              <p className="text-xs uppercase tracking-wide text-gray-500">Ports</p>
+              {activeAsset.portList?.length ? (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {activeAsset.portList.map((port) => (
+                    <span
+                      key={port}
+                      className="inline-flex rounded-full bg-blue-50 px-2 py-0.5 text-[12px] font-semibold text-blue-700"
+                    >
+                      {port}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-600">No reported ports.</p>
+              )}
+            </div>
+
+            {activeAsset.unknownReasons?.length > 0 && (
+              <div className="mt-4 rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                <p className="font-semibold">Why flagged as unknown</p>
+                <ul className="list-disc pl-5">
+                  {activeAsset.unknownReasons.map((reason) => (
+                    <li key={reason}>{reason}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
