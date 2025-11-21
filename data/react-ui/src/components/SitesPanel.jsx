@@ -83,6 +83,7 @@ export default function SitesPanel() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState(null);
   const [createForm, setCreateForm] = useState({ site_id: "", site_name: "", description: "" });
+  const [showCreateForm, setShowCreateForm] = useState(false);
   const [createStatus, setCreateStatus] = useState({ loading: false, error: null, success: null });
   const [tokenFormLabel, setTokenFormLabel] = useState("");
   const [tokenStatus, setTokenStatus] = useState({ loading: false, error: null, success: null, latestToken: null });
@@ -302,9 +303,8 @@ export default function SitesPanel() {
         <div>
           <h2 className="text-2xl font-semibold">Remote Sites</h2>
           <p className="text-gray-600">
-            Multi-agent ingestion overview. Deploy the Go scanner remotely and POST to the
-            <code className="mx-1">{"/sites/{site}/agents/{agent}/ingest"}</code>
-            endpoint to populate this dashboard.
+            Monitor remote agents and understand which site identifiers are active. Use the Site ID in agent configs; the
+            friendly name is for humans and can be updated anytime.
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -389,69 +389,80 @@ export default function SitesPanel() {
       <section className="bg-white border border-gray-200 rounded-lg p-4 shrink-0">
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-lg font-semibold">Register a site ahead of deployment</h3>
+            <h3 className="text-lg font-semibold">Site registration</h3>
             <p className="text-sm text-gray-500">
-              Create placeholders for each location so you can share IDs with remote teams before the agents come online.
+              Share Site IDs with remote teams when they are ready. Expand the form only when you need to add or edit a site.
             </p>
           </div>
-          {createStatus.loading && <span className="text-xs text-gray-400">Saving…</span>}
+          <button
+            type="button"
+            className="rounded border border-gray-300 px-3 py-1 text-sm text-gray-700 hover:bg-gray-100"
+            onClick={() => setShowCreateForm((prev) => !prev)}
+          >
+            {showCreateForm ? "Hide form" : "Add site"}
+          </button>
         </div>
-        {createStatus.error && (
-          <p className="mt-3 text-sm text-red-600 border border-red-200 bg-red-50 rounded p-2">{createStatus.error}</p>
+
+        {showCreateForm && (
+          <>
+            {createStatus.error && (
+              <p className="mt-3 text-sm text-red-600 border border-red-200 bg-red-50 rounded p-2">{createStatus.error}</p>
+            )}
+            {createStatus.success && (
+              <p className="mt-3 text-sm text-green-700 border border-green-200 bg-green-50 rounded p-2">{createStatus.success}</p>
+            )}
+            <form className="mt-4 grid gap-4 md:grid-cols-2" onSubmit={handleCreateSite}>
+              <label className="flex flex-col text-sm font-medium text-gray-700">
+                Site ID <span className="text-red-600">*</span>
+                <input
+                  type="text"
+                  value={createForm.site_id}
+                  onChange={(e) => setCreateForm((prev) => ({ ...prev, site_id: e.target.value }))}
+                  className={`mt-1 rounded focus:border-blue-500 focus:ring-blue-500 ${
+                    formErrors.site_id ? "border-red-400" : "border-gray-300"
+                  }`}
+                  placeholder="branch-001"
+                  required
+                />
+                <span className="text-xs text-gray-500 mt-1">
+                  Agents should send this exact ID (e.g., <code>ATLAS_SITE_ID</code>), while friendly names are just labels.
+                </span>
+                {formErrors.site_id && <span className="text-xs text-red-600 mt-1">{formErrors.site_id}</span>}
+              </label>
+              <label className="flex flex-col text-sm font-medium text-gray-700">
+                Friendly name
+                <input
+                  type="text"
+                  value={createForm.site_name}
+                  onChange={(e) => setCreateForm((prev) => ({ ...prev, site_name: e.target.value }))}
+                  className="mt-1 rounded border-gray-300 focus:border-blue-500 focus:ring-blue-500"
+                  placeholder="Branch Office"
+                />
+                <span className="text-xs text-gray-500 mt-1">Shown in the UI; keep it descriptive for analysts.</span>
+              </label>
+              <label className="flex flex-col text-sm font-medium text-gray-700 md:col-span-2">
+                Notes
+                <textarea
+                  value={createForm.description}
+                  onChange={(e) => setCreateForm((prev) => ({ ...prev, description: e.target.value }))}
+                  className="mt-1 rounded border-gray-300 focus:border-blue-500 focus:ring-blue-500"
+                  rows="2"
+                  placeholder="Optional context or escalation contacts"
+                />
+              </label>
+              <div className="md:col-span-2 flex items-center justify-end text-xs text-gray-500 gap-3">
+                {createStatus.loading && <span className="text-xs text-gray-400">Saving…</span>}
+                <button
+                  type="submit"
+                  className="inline-flex items-center rounded bg-blue-600 px-4 py-2 text-white text-sm font-semibold disabled:opacity-50"
+                  disabled={createStatus.loading}
+                >
+                  Save site
+                </button>
+              </div>
+            </form>
+          </>
         )}
-        {createStatus.success && (
-          <p className="mt-3 text-sm text-green-700 border border-green-200 bg-green-50 rounded p-2">{createStatus.success}</p>
-        )}
-        <form className="mt-4 grid gap-4 md:grid-cols-2" onSubmit={handleCreateSite}>
-          <label className="flex flex-col text-sm font-medium text-gray-700">
-            Site ID <span className="text-red-600">*</span>
-            <input
-              type="text"
-              value={createForm.site_id}
-              onChange={(e) => setCreateForm((prev) => ({ ...prev, site_id: e.target.value }))}
-              className={`mt-1 rounded focus:border-blue-500 focus:ring-blue-500 ${
-                formErrors.site_id ? "border-red-400" : "border-gray-300"
-              }`}
-              placeholder="branch-001"
-              required
-            />
-            {formErrors.site_id && <span className="text-xs text-red-600 mt-1">{formErrors.site_id}</span>}
-          </label>
-          <label className="flex flex-col text-sm font-medium text-gray-700">
-            Friendly name
-            <input
-              type="text"
-              value={createForm.site_name}
-              onChange={(e) => setCreateForm((prev) => ({ ...prev, site_name: e.target.value }))}
-              className="mt-1 rounded border-gray-300 focus:border-blue-500 focus:ring-blue-500"
-              placeholder="Branch Office"
-            />
-          </label>
-          <label className="flex flex-col text-sm font-medium text-gray-700 md:col-span-2">
-            Notes
-            <textarea
-              value={createForm.description}
-              onChange={(e) => setCreateForm((prev) => ({ ...prev, description: e.target.value }))}
-              className="mt-1 rounded border-gray-300 focus:border-blue-500 focus:ring-blue-500"
-              rows="2"
-              placeholder="Optional context or escalation contacts"
-            />
-          </label>
-          <div className="md:col-span-2 flex items-center justify-between text-xs text-gray-500">
-            <p>
-              Agents should target
-              <code className="mx-1">{"/api/sites/{site}/agents/{agent}/ingest"}</code>
-              with the Site ID shown here.
-            </p>
-            <button
-              type="submit"
-              className="inline-flex items-center rounded bg-blue-600 px-4 py-2 text-white text-sm font-semibold disabled:opacity-50"
-              disabled={createStatus.loading}
-            >
-              Save site
-            </button>
-          </div>
-        </form>
       </section>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 overflow-y-auto max-h-64 pr-1 shrink-0">

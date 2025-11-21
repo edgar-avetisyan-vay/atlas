@@ -22,6 +22,60 @@ function describePorts(ports = []) {
     .join(", ");
 }
 
+function formatPortList(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value
+      .map((port) => {
+        if (!port) return null;
+        if (typeof port === "string") return port.trim();
+        const proto = port.protocol || "tcp";
+        const label = port.service ? ` (${port.service})` : "";
+        return `${port.port || port.portid || ""}/${proto}${label}`.trim();
+      })
+      .filter(Boolean);
+  }
+
+  if (typeof value === "string") {
+    return value
+      .split(",")
+      .map((p) => p.trim())
+      .filter(Boolean);
+  }
+
+  return [];
+}
+
+function ipToNumber(ip) {
+  const parts = String(ip || "").split(".").map((p) => Number(p));
+  if (parts.length !== 4 || parts.some((p) => Number.isNaN(p))) return null;
+  return parts.reduce((acc, part) => (acc << 8) + part, 0);
+}
+
+function matchesIpFilter(ip, filter) {
+  if (!filter) return true;
+  const value = filter.trim();
+  const ipNum = ipToNumber(ip);
+  if (ipNum === null) return false;
+
+  if (value.includes("/")) {
+    const [base, maskStr] = value.split("/");
+    const mask = Number(maskStr);
+    const baseNum = ipToNumber(base);
+    if (baseNum === null || Number.isNaN(mask)) return false;
+    const maskBits = mask === 0 ? 0 : (~0 << (32 - mask)) >>> 0;
+    return (ipNum & maskBits) === (baseNum & maskBits);
+  }
+
+  if (value.includes("-")) {
+    const [start, end] = value.split("-").map((part) => ipToNumber(part));
+    if (start === null || end === null) return false;
+    return ipNum >= start && ipNum <= end;
+  }
+
+  return ip.includes(value);
+}
+
 function normalizeControllerHost(row, group, siteName) {
   const ip = looksLikeIp(row[1]) ? String(row[1]) : "";
   const dockerIp = looksLikeIp(row[2]) ? String(row[2]) : ip;
@@ -30,6 +84,8 @@ function normalizeControllerHost(row, group, siteName) {
   const os = row[4] || row[3] || "Unknown";
   const onlineStatus = (row[10] || row[9] || "unknown").toString();
   const lastSeen = row[9] || row[10] || "";
+  const portList = formatPortList(row[6]);
+  const portsLabel = portList.length ? `${portList.length} open` : "no_ports";
 
   const missingHostname = !hostname || hostname === detectedIp || hostname === "NoName";
   const missingOs = !os || String(os).toLowerCase() === "unknown";
@@ -40,7 +96,8 @@ function normalizeControllerHost(row, group, siteName) {
     ip: detectedIp,
     os,
     mac: row[5] || row[4] || "Unknown",
-    ports: row[6] || "no_ports",
+    ports: portsLabel,
+    portList,
     network: row[8] || row[7] || "",
     interfaceName: row[8] || "N/A",
     status: onlineStatus,
@@ -57,7 +114,8 @@ function normalizeControllerHost(row, group, siteName) {
 }
 
 function normalizeRemoteHost(host, siteId, siteName, idx = 0) {
-  const ports = describePorts(host?.ports);
+  const portList = formatPortList(host?.ports);
+  const ports = portList.length ? `${portList.length} open` : describePorts(host?.ports);
   const metadata = host?.metadata || {};
   const network = metadata.network || metadata.subnet || metadata.vlan || "remote";
   const interfaceName = metadata.interface_name || metadata.interface || metadata.iface || "remote";
@@ -74,6 +132,7 @@ function normalizeRemoteHost(host, siteId, siteName, idx = 0) {
     os,
     mac: host?.mac || "Unknown",
     ports: ports || "no_ports",
+    portList,
     network,
     interfaceName,
     status,
@@ -132,6 +191,15 @@ export default function InventoryPanel() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [unknownOnly, setUnknownOnly] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(null);
+  const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false);
+  const [ipFilter, setIpFilter] = useState("");
+  const [lastSeenFilter, setLastSeenFilter] = useState("any");
+  const [groupBy, setGroupBy] = useState("none");
+  const [sortConfig, setSortConfig] = useState({ key: "hostname", direction: "asc" });
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [acknowledgedIds, setAcknowledgedIds] = useState(new Set());
+  const [bulkStatus, setBulkStatus] = useState(null);
+  const [portExpansions, setPortExpansions] = useState({});
 
   useEffect(() => {
     let cancelled = false;
@@ -168,6 +236,10 @@ export default function InventoryPanel() {
     const exists = siteSummary.some((s) => s.site_id === selectedSiteId);
     if (!exists) setSelectedSiteId(ALL_SITES.id);
   }, [selectedSiteId, siteSummary]);
+
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [assets]);
 
   useEffect(() => {
     let cancelled = false;
@@ -236,25 +308,91 @@ export default function InventoryPanel() {
 
   const filteredAssets = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    return assets
-      .filter((asset) => {
-        if (unknownOnly && !asset.isUnknown) return false;
-        if (statusFilter !== "all" && (asset.status || "").toLowerCase() !== statusFilter) return false;
-        if (!needle) return true;
-        return (
-          asset.hostname.toLowerCase().includes(needle) ||
-          asset.ip.toLowerCase().includes(needle) ||
-          (asset.os || "").toLowerCase().includes(needle) ||
-          (asset.network || "").toLowerCase().includes(needle) ||
-          (asset.ports || "").toLowerCase().includes(needle)
-        );
-      })
-      .sort((a, b) => a.hostname.localeCompare(b.hostname));
-  }, [assets, query, statusFilter, unknownOnly]);
+    const now = Date.now();
+    const maxAge = {
+      hour: 60 * 60 * 1000,
+      day: 24 * 60 * 60 * 1000,
+      week: 7 * 24 * 60 * 60 * 1000,
+    };
+
+    return assets.filter((asset) => {
+      if (unknownOnly && !asset.isUnknown) return false;
+      if (statusFilter !== "all" && (asset.status || "").toLowerCase() !== statusFilter) return false;
+      if (ipFilter && !matchesIpFilter(asset.ip, ipFilter)) return false;
+      if (lastSeenFilter !== "any") {
+        const ts = new Date(asset.lastSeen || 0).getTime();
+        const age = now - ts;
+        if (Number.isNaN(ts)) return false;
+        if (lastSeenFilter === "hour" && age > maxAge.hour) return false;
+        if (lastSeenFilter === "day" && age > maxAge.day) return false;
+        if (lastSeenFilter === "week" && age > maxAge.week) return false;
+        if (lastSeenFilter === "stale" && age < maxAge.day) return false;
+      }
+
+      if (!needle) return true;
+      return (
+        asset.hostname.toLowerCase().includes(needle) ||
+        asset.ip.toLowerCase().includes(needle) ||
+        (asset.os || "").toLowerCase().includes(needle) ||
+        (asset.network || "").toLowerCase().includes(needle) ||
+        (asset.ports || "").toLowerCase().includes(needle)
+      );
+    });
+  }, [assets, ipFilter, lastSeenFilter, query, statusFilter, unknownOnly]);
+
+  const sortedAssets = useMemo(() => {
+    const sorted = [...filteredAssets];
+    const dir = sortConfig.direction === "asc" ? 1 : -1;
+    sorted.sort((a, b) => {
+      const key = sortConfig.key;
+      const normalize = (val) => (val === undefined || val === null ? "" : String(val).toLowerCase());
+      if (key === "hostname" || key === "os" || key === "network" || key === "site" || key === "status") {
+        const left = key === "site" ? normalize(a.siteName) : normalize(a[key]);
+        const right = key === "site" ? normalize(b.siteName) : normalize(b[key]);
+        return left.localeCompare(right) * dir;
+      }
+      if (key === "ip") {
+        return ((ipToNumber(a.ip) || 0) - (ipToNumber(b.ip) || 0)) * dir;
+      }
+      if (key === "ports") {
+        return ((a.portList?.length || 0) - (b.portList?.length || 0)) * dir;
+      }
+      if (key === "lastSeen") {
+        return (new Date(a.lastSeen || 0).getTime() - new Date(b.lastSeen || 0).getTime()) * dir;
+      }
+      return 0;
+    });
+    return sorted;
+  }, [filteredAssets, sortConfig]);
+
+  const groupedAssets = useMemo(() => {
+    if (groupBy === "none") return sortedAssets.map((asset) => ({ type: "asset", asset }));
+    const map = new Map();
+    sortedAssets.forEach((asset) => {
+      const key = groupBy === "site" ? asset.siteName || "Unknown site" : (asset.status || "unknown").toLowerCase();
+      const label = groupBy === "site" ? key : key.charAt(0).toUpperCase() + key.slice(1);
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(asset);
+    });
+
+    return Array.from(map.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .flatMap(([label, items]) => [
+        { type: "group", label, count: items.length },
+        ...items.map((asset) => ({ type: "asset", asset })),
+      ]);
+  }, [groupBy, sortedAssets]);
 
   const hasFilters = useMemo(
-    () => Boolean(query.trim() || unknownOnly || statusFilter !== "all"),
-    [query, unknownOnly, statusFilter]
+    () =>
+      Boolean(
+        query.trim() ||
+          ipFilter.trim() ||
+          unknownOnly ||
+          statusFilter !== "all" ||
+          lastSeenFilter !== "any"
+      ),
+    [ipFilter, lastSeenFilter, query, statusFilter, unknownOnly]
   );
   const hiddenCount = hasFilters ? assets.length - filteredAssets.length : 0;
 
@@ -270,12 +408,56 @@ export default function InventoryPanel() {
 
   const siteOptions = [CONTROLLER_SITE, ...siteSummary.map((s) => ({ id: s.site_id, name: s.site_name || s.site_id })), ALL_SITES];
   const assetsTableRef = useRef(null);
+  const assetRowId = (asset) => `${asset.siteId}-${asset.id}`;
+  const visibleAssetIds = sortedAssets.map(assetRowId);
+  const selectedVisibleIds = visibleAssetIds.filter((id) => selectedIds.has(id));
+  const allSelected = visibleAssetIds.length > 0 && selectedVisibleIds.length === visibleAssetIds.length;
+  const toggleSelect = (id) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const toggleSelectAll = () => {
+    setSelectedIds((prev) => {
+      if (visibleAssetIds.length === 0) return new Set();
+      if (visibleAssetIds.every((id) => prev.has(id))) return new Set();
+      return new Set(visibleAssetIds);
+    });
+  };
+  const togglePorts = (id) => setPortExpansions((prev) => ({ ...prev, [id]: !prev[id] }));
 
   const showUnknownAssets = () => {
     setUnknownOnly(true);
     setQuery("");
     setStatusFilter("all");
     assetsTableRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  const setSortKey = (key) => {
+    setSortConfig((prev) => ({
+      key,
+      direction: prev.key === key && prev.direction === "asc" ? "desc" : "asc",
+    }));
+  };
+
+  const selectedAssets = sortedAssets.filter((asset) => selectedIds.has(assetRowId(asset)));
+  const handleBulkConfirm = () => {
+    if (!selectedAssets.length) return;
+    setAcknowledgedIds((prev) => {
+      const next = new Set(prev);
+      selectedAssets.forEach((asset) => next.add(assetRowId(asset)));
+      return next;
+    });
+    setBulkStatus(`${selectedAssets.length} assets marked as confirmed`);
+  };
+
+  const handleBulkUnknown = () => {
+    setUnknownOnly(true);
+    assetsTableRef.current?.scrollIntoView({ behavior: "smooth" });
+    setBulkStatus("Filtering unknown assets");
   };
 
   return (
@@ -341,6 +523,7 @@ export default function InventoryPanel() {
           className={`text-left rounded-lg border p-4 shadow-sm transition hover:border-amber-300 hover:shadow ${
             unknownOnly ? "border-amber-300 bg-amber-50" : "border-gray-200 bg-white"
           }`}
+          aria-pressed={unknownOnly}
         >
           <p className="text-xs uppercase tracking-wide text-gray-500">Unknown</p>
           <p className="text-3xl font-bold text-amber-600">{summary.unknown}</p>
@@ -366,8 +549,9 @@ export default function InventoryPanel() {
                   <span className="ml-2 text-amber-700">({hiddenCount} hidden by filters)</span>
                 )}
               </p>
+              {bulkStatus && <p className="text-xs text-blue-700 mt-1">{bulkStatus}</p>}
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-2 items-center">
               <input
                 type="text"
                 placeholder="Search hostname, IP, OS, network"
@@ -375,6 +559,14 @@ export default function InventoryPanel() {
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
               />
+              <button
+                type="button"
+                className="rounded border border-gray-300 px-2 py-1 text-sm text-gray-700 hover:bg-gray-100"
+                onClick={() => setAdvancedFiltersOpen((prev) => !prev)}
+                aria-expanded={advancedFiltersOpen}
+              >
+                {advancedFiltersOpen ? "Hide advanced" : "Advanced search"}
+              </button>
               <select
                 className="rounded border-gray-300 text-sm focus:border-blue-500 focus:ring-blue-500"
                 value={statusFilter}
@@ -386,6 +578,49 @@ export default function InventoryPanel() {
                 <option value="running">Running</option>
                 <option value="stopped">Stopped</option>
               </select>
+              <select
+                className="rounded border-gray-300 text-sm focus:border-blue-500 focus:ring-blue-500"
+                value={lastSeenFilter}
+                onChange={(e) => setLastSeenFilter(e.target.value)}
+              >
+                <option value="any">Any time</option>
+                <option value="hour">Last hour</option>
+                <option value="day">Last 24h</option>
+                <option value="week">Last 7d</option>
+                <option value="stale">Older than 24h</option>
+              </select>
+              <select
+                className="rounded border-gray-300 text-sm focus:border-blue-500 focus:ring-blue-500"
+                value={groupBy}
+                onChange={(e) => setGroupBy(e.target.value)}
+              >
+                <option value="none">No grouping</option>
+                <option value="site">Group by site</option>
+                <option value="status">Group by status</option>
+              </select>
+              <select
+                className="rounded border-gray-300 text-sm focus:border-blue-500 focus:ring-blue-500"
+                value={sortConfig.key}
+                onChange={(e) => setSortKey(e.target.value)}
+              >
+                <option value="hostname">Hostname</option>
+                <option value="site">Site</option>
+                <option value="ip">IP</option>
+                <option value="os">OS</option>
+                <option value="network">Network</option>
+                <option value="ports">Ports</option>
+                <option value="status">Status</option>
+                <option value="lastSeen">Last seen</option>
+              </select>
+              <button
+                type="button"
+                className="rounded border border-gray-300 px-2 py-1 text-sm text-gray-700 hover:bg-gray-100"
+                onClick={() =>
+                  setSortConfig((prev) => ({ key: prev.key, direction: prev.direction === "asc" ? "desc" : "asc" }))
+                }
+              >
+                {sortConfig.direction === "asc" ? "⬆" : "⬇"}
+              </button>
               <label className="inline-flex items-center gap-2 text-sm text-gray-700">
                 <input
                   type="checkbox"
@@ -403,6 +638,8 @@ export default function InventoryPanel() {
                     setQuery("");
                     setStatusFilter("all");
                     setUnknownOnly(false);
+                    setIpFilter("");
+                    setLastSeenFilter("any");
                   }}
                 >
                   Clear filters
@@ -411,10 +648,65 @@ export default function InventoryPanel() {
             </div>
           </div>
 
+          {advancedFiltersOpen && (
+            <div className="border-b border-gray-100 bg-gray-50 px-4 py-3 text-sm text-gray-700 flex flex-wrap gap-3 items-center justify-between">
+              <label className="flex items-center gap-2">
+                IP / CIDR / range
+                <input
+                  type="text"
+                  value={ipFilter}
+                  onChange={(e) => setIpFilter(e.target.value)}
+                  className="rounded border-gray-300 text-sm focus:border-blue-500 focus:ring-blue-500"
+                  placeholder="10.0.0.0/24 or 10.0.0.1-10.0.0.20"
+                />
+              </label>
+              <p className="text-xs text-gray-600">
+                Combine quick search with range-aware IP filtering and time bounds to zero in on assets.
+              </p>
+            </div>
+          )}
+
+          {selectedAssets.length > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 bg-blue-50 px-4 py-2 text-xs text-blue-900">
+              <span className="font-semibold">{selectedAssets.length} selected</span>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className="rounded border border-blue-300 bg-white px-3 py-1 hover:bg-blue-100"
+                  onClick={handleBulkConfirm}
+                >
+                  Mark confirmed
+                </button>
+                <button
+                  type="button"
+                  className="rounded border border-blue-300 bg-white px-3 py-1 hover:bg-blue-100"
+                  onClick={handleBulkUnknown}
+                >
+                  Filter unknown
+                </button>
+                <button
+                  type="button"
+                  className="rounded border border-blue-300 bg-white px-3 py-1 hover:bg-blue-100"
+                  onClick={() => setSelectedIds(new Set())}
+                >
+                  Clear selection
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="flex-1 overflow-auto">
-            <table className="min-w-full text-sm">
-              <thead className="bg-gray-50 text-xs uppercase text-gray-600">
+            <table className="min-w-full text-xs">
+              <thead className="bg-gray-50 uppercase text-gray-600">
                 <tr>
+                  <th className="px-2 py-2 text-left w-8">
+                    <input
+                      type="checkbox"
+                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      checked={allSelected}
+                      onChange={toggleSelectAll}
+                    />
+                  </th>
                   <th className="px-3 py-2 text-left">Site</th>
                   <th className="px-3 py-2 text-left">Hostname</th>
                   <th className="px-3 py-2 text-left">IP</th>
@@ -427,38 +719,89 @@ export default function InventoryPanel() {
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {filteredAssets.map((asset) => (
-                  <tr key={`${asset.siteId}-${asset.id}`} className={asset.isUnknown ? "bg-amber-50" : ""}>
-                    <td className="px-3 py-2 text-xs font-semibold text-gray-700">{asset.siteName}</td>
-                    <td className="px-3 py-2">
-                      <div className="font-medium text-gray-900">{asset.hostname || "Unknown"}</div>
-                      <div className="text-xs text-gray-500">{asset.group}</div>
-                    </td>
-                    <td className="px-3 py-2 font-mono text-xs">{asset.ip || "—"}</td>
-                    <td className="px-3 py-2 text-gray-800">{asset.os}</td>
-                    <td className="px-3 py-2 text-gray-700">{asset.network || "—"}</td>
-                    <td className="px-3 py-2 text-gray-700">{asset.ports || "—"}</td>
-                    <td className="px-3 py-2">
-                      <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${
-                        (asset.status || "").toLowerCase().includes("online") || (asset.status || "").toLowerCase().includes("running")
-                          ? "bg-green-100 text-green-800"
-                          : "bg-gray-200 text-gray-700"
-                      }`}>
-                        {asset.status || "unknown"}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2 text-xs text-gray-600">{asset.lastSeen || "—"}</td>
-                    <td className="px-3 py-2 text-xs text-gray-600">
-                      <span className="inline-flex items-center gap-1 rounded border border-dashed border-blue-200 px-2 py-0.5 text-blue-700">
-                        <span className="h-2 w-2 rounded-full bg-blue-400" />
-                        SSH enrichment soon
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-                {!filteredAssets.length && (
+                {groupedAssets.map((row) => {
+                  if (row.type === "group") {
+                    return (
+                      <tr key={`group-${row.label}`} className="bg-gray-50">
+                        <td colSpan={10} className="px-3 py-1.5 text-[11px] font-semibold text-gray-700 uppercase tracking-wide">
+                          {row.label} · {row.count} assets
+                        </td>
+                      </tr>
+                    );
+                  }
+
+                  const asset = row.asset;
+                  const rowId = assetRowId(asset);
+                  const portsExpanded = Boolean(portExpansions[rowId]);
+                  const acknowledged = acknowledgedIds.has(rowId);
+
+                  return (
+                    <tr key={rowId} className={`${asset.isUnknown ? "bg-amber-50" : ""} hover:bg-gray-50`}> 
+                      <td className="px-2 py-1.5 align-top">
+                        <input
+                          type="checkbox"
+                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          checked={selectedIds.has(rowId)}
+                          onChange={() => toggleSelect(rowId)}
+                        />
+                      </td>
+                      <td className="px-3 py-1.5 text-[11px] font-semibold text-gray-700">{asset.siteName}</td>
+                      <td className="px-3 py-1.5">
+                        <div className="font-medium text-gray-900 truncate max-w-[140px]" title={asset.hostname || "Unknown"}>
+                          {asset.hostname || "Unknown"}
+                        </div>
+                        <div className="text-[11px] text-gray-500 flex items-center gap-1">
+                          <span>{asset.group}</span>
+                          {acknowledged && <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-700">Confirmed</span>}
+                          {asset.isUnknown && <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">Unknown</span>}
+                        </div>
+                      </td>
+                      <td className="px-3 py-1.5 font-mono text-[11px]" title={asset.ip || "—"}>{asset.ip || "—"}</td>
+                      <td className="px-3 py-1.5 text-gray-800 truncate max-w-[140px]" title={asset.os}>
+                        {asset.os}
+                      </td>
+                      <td className="px-3 py-1.5 text-gray-700 truncate max-w-[120px]" title={asset.network || "—"}>
+                        {asset.network || "—"}
+                      </td>
+                      <td className="px-3 py-1.5 text-gray-700">
+                        <button
+                          type="button"
+                          className="text-left text-xs underline decoration-dotted text-blue-700 hover:text-blue-900"
+                          onClick={() => togglePorts(rowId)}
+                          title={asset.portList?.join(", ")}
+                        >
+                          {asset.portList?.length ? `${asset.portList.length} open` : "—"}
+                        </button>
+                        {portsExpanded && asset.portList?.length > 0 && (
+                          <div className="mt-1 max-w-xs rounded border border-gray-200 bg-gray-50 px-2 py-1 text-[11px] text-gray-700 whitespace-normal">
+                            {asset.portList.join(", ")}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-3 py-1.5">
+                        <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                          (asset.status || "").toLowerCase().includes("online") || (asset.status || "").toLowerCase().includes("running")
+                            ? "bg-green-100 text-green-800"
+                            : "bg-gray-200 text-gray-700"
+                        }`}>
+                          {asset.status || "unknown"}
+                        </span>
+                      </td>
+                      <td className="px-3 py-1.5 text-[11px] text-gray-600" title={asset.lastSeen || "—"}>
+                        {asset.lastSeen || "—"}
+                      </td>
+                      <td className="px-3 py-1.5 text-[11px] text-gray-600">
+                        <span className="inline-flex items-center gap-1 rounded border border-dashed border-blue-200 px-2 py-0.5 text-blue-700">
+                          <span className="h-2 w-2 rounded-full bg-blue-400" />
+                          SSH enrichment soon
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {!groupedAssets.length && (
                   <tr>
-                    <td className="px-3 py-4 text-center text-sm text-gray-500" colSpan={9}>
+                    <td className="px-3 py-4 text-center text-sm text-gray-500" colSpan={10}>
                       {loading ? "Loading inventory…" : "No assets match your filters"}
                     </td>
                   </tr>
@@ -481,13 +824,18 @@ export default function InventoryPanel() {
             </div>
             <div className="max-h-64 overflow-auto divide-y">
               {Array.from(summary.bySite.entries()).map(([id, info]) => (
-                <div key={id} className="px-4 py-3 flex items-center justify-between">
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setSelectedSiteId(id)}
+                  className="w-full text-left px-4 py-3 flex items-center justify-between hover:bg-gray-50"
+                >
                   <div>
                     <p className="text-sm font-semibold text-gray-900">{info.name}</p>
                     <p className="text-xs text-gray-500">{info.unknown} unknown</p>
                   </div>
                   <span className="text-xl font-bold text-gray-800">{info.total}</span>
-                </div>
+                </button>
               ))}
               {!summary.bySite.size && (
                 <div className="px-4 py-6 text-sm text-gray-500">No sites loaded yet</div>
