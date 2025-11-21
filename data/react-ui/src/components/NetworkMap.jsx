@@ -47,6 +47,7 @@ export function NetworkMap() {
   const [legendVisible, setLegendVisible] = useState(false);
   const { activeSiteId } = useSiteSource();
   const [hasRoutes, setHasRoutes] = useState(false);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
 
   /**
    * Initial data load (hosts + external)
@@ -480,6 +481,11 @@ export function NetworkMap() {
     }
   }, [layoutStyle]);
 
+  const filterFieldClass =
+    "h-10 w-48 rounded border border-gray-300 px-3 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200 placeholder:text-gray-400";
+  const controlButtonClass =
+    "inline-flex items-center gap-1 rounded border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50";
+
   const handleZoom = (direction) => {
     const network = networkRef.current;
     if (!network) return;
@@ -519,95 +525,166 @@ export function NetworkMap() {
   };
 
   return (
-    <div className="relative w-full h-full bg-white border rounded-lg p-4 flex flex-col">
-
+    <div className="relative flex h-full w-full min-h-0 flex-col rounded-lg border bg-white p-4">
       {/* Layout Selector + Filters */}
-      <div className="flex flex-wrap gap-3 mb-3 items-center shrink-0">
-        <select
-          value={layoutStyle}
-          onChange={(e) => setLayoutStyle(e.target.value)}
-          className="border p-1 rounded"
-        >
-          <option value="default">Default Layout</option>
-          <option value="hierarchical">Hierarchical</option>
-          <option value="circular">Circular</option>
-        </select>
+      <div className="mb-3 flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-wrap items-center gap-2 lg:gap-3 flex-1 min-w-0">
+          <select
+            value={layoutStyle}
+            onChange={(e) => setLayoutStyle(e.target.value)}
+            className={`${filterFieldClass} w-44`}
+            aria-label="Layout selector"
+          >
+            <option value="default">Default layout</option>
+            <option value="hierarchical">Hierarchical</option>
+            <option value="circular">Circular</option>
+          </select>
+          <input
+            type="text"
+            placeholder="Filter by name"
+            value={filters.name}
+            onChange={(e) => setFilters({ ...filters, name: e.target.value })}
+            className={filterFieldClass}
+          />
+          <select
+            value={filters.group}
+            onChange={(e) => setFilters({ ...filters, group: e.target.value })}
+            className={`${filterFieldClass} w-40`}
+          >
+            <option value="">Filter by group</option>
+            <option value="docker">Docker</option>
+            <option value="normal">Normal</option>
+          </select>
+          <input
+            type="text"
+            placeholder="Filter by subnet (e.g. 10.0.1)"
+            value={filters.subnet}
+            onChange={(e) => setFilters({ ...filters, subnet: e.target.value })}
+            className={filterFieldClass}
+          />
+          <select
+            value={filters.status}
+            onChange={(e) => setFilters({ ...filters, status: e.target.value })}
+            className={`${filterFieldClass} w-40`}
+          >
+            <option value="">Filter by status</option>
+            <option value="online">Online</option>
+            <option value="offline">Offline</option>
+            <option value="unknown">Unknown</option>
+          </select>
+          <input
+            type="text"
+            placeholder="Filter by OS"
+            list="os-suggestions"
+            value={filters.os}
+            onChange={(e) => setFilters({ ...filters, os: e.target.value })}
+            className={filterFieldClass}
+          />
+          <datalist id="os-suggestions">
+            {osSamples.map((os) => (
+              <option key={os} value={os} />
+            ))}
+          </datalist>
+          <select
+            value={filters.risk}
+            onChange={(e) => setFilters({ ...filters, risk: e.target.value })}
+            className={`${filterFieldClass} w-40`}
+          >
+            <option value="">Filter by risk</option>
+            <option value="critical">High risk</option>
+            <option value="elevated">Medium risk</option>
+            <option value="low">Low / unknown</option>
+          </select>
+        </div>
 
-        <span className="text-xs text-gray-500 italic">{layoutDescription}</span>
-
-        <input
-          type="text"
-          placeholder="Filter by name"
-          value={filters.name}
-          onChange={(e) => setFilters({ ...filters, name: e.target.value })}
-          className="border p-1 rounded"
-        />
-        <select
-          value={filters.group}
-          onChange={(e) => setFilters({ ...filters, group: e.target.value })}
-          className="border p-1 rounded"
-        >
-          <option value="">All Groups</option>
-          <option value="docker">Docker</option>
-          <option value="normal">Normal</option>
-        </select>
-        <input
-          type="text"
-          placeholder="Filter by subnet (e.g. 10.0.1)"
-          value={filters.subnet}
-          onChange={(e) => setFilters({ ...filters, subnet: e.target.value })}
-          className="border p-1 rounded"
-        />
-
-        <select
-          value={filters.status}
-          onChange={(e) => setFilters({ ...filters, status: e.target.value })}
-          className="border p-1 rounded"
-        >
-          <option value="">All Statuses</option>
-          <option value="online">Online</option>
-          <option value="offline">Offline</option>
-          <option value="unknown">Unknown</option>
-        </select>
-
-        <input
-          type="text"
-          placeholder="Filter by OS"
-          list="os-suggestions"
-          value={filters.os}
-          onChange={(e) => setFilters({ ...filters, os: e.target.value })}
-          className="border p-1 rounded"
-        />
-        <datalist id="os-suggestions">
-          {osSamples.map((os) => (
-            <option key={os} value={os} />
-          ))}
-        </datalist>
-
-        <select
-          value={filters.risk}
-          onChange={(e) => setFilters({ ...filters, risk: e.target.value })}
-          className="border p-1 rounded"
-        >
-          <option value="">All Risks</option>
-          <option value="critical">High risk</option>
-          <option value="elevated">Medium risk</option>
-          <option value="low">Low / unknown</option>
-        </select>
-
-        {!activeSiteId && (
-          <div className="ml-auto text-xs text-blue-800 bg-blue-50 border border-blue-200 rounded px-3 py-1">
-            Select a site in the "Sites" tab to load a specific location map.
+        <div className="flex items-center gap-2 lg:gap-3">
+          <div className="inline-flex items-center gap-1 rounded border border-gray-300 bg-white p-1 shadow-sm">
+            <button
+              type="button"
+              className={`${controlButtonClass} border-0 px-2 py-1`}
+              onClick={() => handleZoom("in")}
+              aria-label="Zoom in"
+              title="Zoom in"
+            >
+              <span aria-hidden>➕</span>
+              <span className="hidden xl:inline">Zoom</span>
+            </button>
+            <button
+              type="button"
+              className={`${controlButtonClass} border-0 px-2 py-1`}
+              onClick={() => handleZoom("out")}
+              aria-label="Zoom out"
+              title="Zoom out"
+            >
+              <span aria-hidden>➖</span>
+              <span className="hidden xl:inline">Zoom</span>
+            </button>
+            <button
+              type="button"
+              className={`${controlButtonClass} border-0 px-2 py-1`}
+              onClick={resetView}
+              aria-label="Fit to view"
+              title="Fit graph"
+            >
+              <span aria-hidden>🖼️</span>
+              <span className="hidden xl:inline">Fit</span>
+            </button>
           </div>
-        )}
+
+          <div className="relative">
+            <button
+              type="button"
+              className={controlButtonClass}
+              onClick={() => setExportMenuOpen((open) => !open)}
+              aria-expanded={exportMenuOpen}
+            >
+              Export
+              <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden>
+                <path d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 10.94l3.71-3.71a.75.75 0 1 1 1.06 1.06l-4.24 4.25a.75.75 0 0 1-1.06 0L5.21 8.29a.75.75 0 0 1 .02-1.08Z" />
+              </svg>
+            </button>
+            {exportMenuOpen && (
+              <div className="absolute right-0 z-20 mt-1 w-40 rounded border border-gray-200 bg-white shadow-lg">
+                <button
+                  type="button"
+                  className="block w-full px-3 py-2 text-left text-sm hover:bg-gray-50"
+                  onClick={() => {
+                    exportImage("png");
+                    setExportMenuOpen(false);
+                  }}
+                >
+                  Save as PNG
+                </button>
+                <button
+                  type="button"
+                  className="block w-full px-3 py-2 text-left text-sm hover:bg-gray-50"
+                  onClick={() => {
+                    exportPdf();
+                    setExportMenuOpen(false);
+                  }}
+                >
+                  Save as PDF
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
+
+      <p className="-mt-1 mb-3 text-xs text-gray-500">{layoutDescription}</p>
+
+      {!activeSiteId && (
+        <div className="mb-3 text-xs text-blue-800 bg-blue-50 border border-blue-200 rounded px-3 py-2">
+          Select a site in the "Sites" tab to load a specific location map.
+        </div>
+      )}
 
       {error ? (
         <div className="text-red-500">{error}</div>
       ) : (
         <>
           {/* Map area flexes to fill available height */}
-          <div ref={containerRef} className="w-full flex-1 min-h-[520px] bg-gray-100 rounded-lg" />
+          <div ref={containerRef} className="w-full flex-1 min-h-0 rounded-lg border bg-gray-100" />
 
           {/* Overlay the selected node panel so it doesn't change layout height */}
           <div className="absolute top-4 right-4 z-10 max-w-sm">
@@ -616,49 +693,6 @@ export function NetworkMap() {
               route={selectedRoute}
               subnet={selectedSubnet}
             />
-          </div>
-
-          <div className="absolute top-20 left-4 z-10 flex flex-col gap-2">
-            <div className="bg-white border rounded shadow px-3 py-2 text-sm flex gap-2 items-center">
-              <button
-                type="button"
-                className="px-2 py-1 border rounded hover:bg-gray-100"
-                onClick={() => handleZoom("in")}
-              >
-                + Zoom
-              </button>
-              <button
-                type="button"
-                className="px-2 py-1 border rounded hover:bg-gray-100"
-                onClick={() => handleZoom("out")}
-              >
-                − Zoom
-              </button>
-              <button
-                type="button"
-                className="px-2 py-1 border rounded hover:bg-gray-100"
-                onClick={resetView}
-              >
-                Fit
-              </button>
-            </div>
-
-            <div className="bg-white border rounded shadow px-3 py-2 text-sm flex gap-2 items-center">
-              <button
-                type="button"
-                className="px-2 py-1 border rounded hover:bg-gray-100"
-                onClick={() => exportImage("png")}
-              >
-                Export PNG
-              </button>
-              <button
-                type="button"
-                className="px-2 py-1 border rounded hover:bg-gray-100"
-                onClick={exportPdf}
-              >
-                Save PDF
-              </button>
-            </div>
           </div>
 
           <div className="absolute bottom-4 right-4 z-10">

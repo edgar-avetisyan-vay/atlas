@@ -467,46 +467,8 @@ export default function SitesPanel() {
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 overflow-y-auto max-h-64 pr-1 shrink-0">
         {filteredSites.length === 0 && !loading && (
-          <div className="col-span-full border border-dashed rounded-lg p-6 bg-white">
-            <div className="flex flex-col items-center text-center gap-3">
-              <div className="w-14 h-14 flex items-center justify-center rounded-full bg-blue-50 text-2xl">
-                🌐
-              </div>
-              <div>
-                <p className="text-lg font-semibold text-gray-800">Deploy your first remote site</p>
-                <p className="text-sm text-gray-500">
-                  Build the slim agent (`Dockerfile.agent`) and point it at this controller to populate the Sites dashboard.
-                </p>
-              </div>
-              <ol className="text-left text-sm text-gray-600 space-y-1">
-                <li>
-                  <span className="font-medium text-gray-800">1.</span> `docker build -f Dockerfile.agent -t atlas-agent .`
-                </li>
-                <li>
-                  <span className="font-medium text-gray-800">2.</span> `docker run -d --network host --cap-add NET_RAW --cap-add NET_ADMIN \`
-                  <br />
-                  <span className="ml-6">-e ATLAS_CONTROLLER_URL=https://controller/api -e ATLAS_SITE_ID=branch-001 \</span>
-                  <br />
-                  <span className="ml-6">-e ATLAS_AGENT_INTERVAL=30m -e ATLAS_AGENT_ID=edge01 atlas-agent`</span>
-                </li>
-                <li>
-                  <span className="font-medium text-gray-800">3.</span> Use `SCAN_SUBNETS="192.168.10.0/24"` if the auto-detected CIDR
-                  needs overriding.
-                </li>
-              </ol>
-              <p className="text-xs text-gray-500">
-                Agents post to
-                <code className="mx-1">{"/api/sites/{site}/agents/{agent}/ingest"}</code>. Heartbeats show up here within a few
-                seconds of the first ingest.
-              </p>
-              <p className="text-xs text-gray-500">
-                Remote agents stay running and default to a 15 minute loop. Override it with
-                <code className="mx-1">ATLAS_AGENT_INTERVAL=5m</code>
-                or add
-                <code className="mx-1">ATLAS_AGENT_ONCE=1</code>
-                to perform a single scan.
-              </p>
-            </div>
+          <div className="col-span-full border border-dashed rounded-lg p-6 bg-white text-center text-sm text-gray-600">
+            No sites reported yet. Add a site ID or wait for an agent ingest to appear here.
           </div>
         )}
         {filteredSites.map((site) => {
@@ -576,86 +538,91 @@ export default function SitesPanel() {
             {tokenStatus.loading && <span className="text-xs text-gray-400">Working…</span>}
           </header>
 
-          {tokenStatus.error && (
-            <p className="px-4 pt-4 text-sm text-red-600">{tokenStatus.error}</p>
-          )}
-          {tokenStatus.success && (
-            <p className="px-4 pt-4 text-sm text-green-700">{tokenStatus.success}</p>
-          )}
-          {tokenStatus.latestToken && (
-            <div className="mx-4 mt-3 mb-1 p-3 rounded border border-blue-200 bg-blue-50">
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-xs text-blue-900 font-medium">Newest token</p>
-                  <p className="font-mono text-xs break-all text-blue-900">{tokenStatus.latestToken}</p>
+          <div className="flex-1 flex flex-col">
+            {tokenStatus.error && (
+              <p className="px-4 pt-4 text-sm text-red-600">{tokenStatus.error}</p>
+            )}
+            {tokenStatus.success && (
+              <p className="px-4 pt-4 text-sm text-green-700">{tokenStatus.success}</p>
+            )}
+            {tokenStatus.latestToken && (
+              <div className="mx-4 mt-3 mb-1 p-3 rounded border border-blue-200 bg-blue-50">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-xs text-blue-900 font-medium">Newest token</p>
+                    <p className="font-mono text-xs break-all text-blue-900">{tokenStatus.latestToken}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => copyToken(tokenStatus.latestToken)}
+                    className="shrink-0 inline-flex items-center rounded bg-blue-600 px-3 py-1 text-white text-xs font-semibold"
+                  >
+                    Copy
+                  </button>
                 </div>
+                <p className="text-xs text-blue-800 mt-2">
+                  Paste into <code className="font-mono">ATLAS_AGENT_TOKEN</code> for your agent container. Tokens are only shown
+                  once—store it securely now.
+                </p>
+              </div>
+            )}
+
+            <form className="px-4 py-3 border-b border-gray-100 flex flex-col gap-3" onSubmit={handleGenerateToken}>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:gap-3">
+                <label className="flex-1 text-sm text-gray-700 font-medium">
+                  Token label (optional)
+                  <input
+                    type="text"
+                    value={tokenFormLabel}
+                    onChange={(e) => setTokenFormLabel(e.target.value)}
+                    className="mt-1 w-full rounded border-gray-300 focus:border-blue-500 focus:ring-blue-500"
+                    placeholder="edge01 or branch gateway"
+                    disabled={!activeSiteId}
+                  />
+                </label>
                 <button
-                  type="button"
-                  onClick={() => copyToken(tokenStatus.latestToken)}
-                  className="shrink-0 inline-flex items-center rounded bg-blue-600 px-3 py-1 text-white text-xs font-semibold"
+                  type="submit"
+                  className="inline-flex items-center justify-center rounded bg-blue-600 px-4 py-2 text-white text-sm font-semibold disabled:opacity-50"
+                  disabled={!activeSiteId || tokenStatus.loading}
                 >
-                  Copy
+                  Generate token
                 </button>
               </div>
-              <p className="text-xs text-blue-800 mt-2">
-                Paste into <code className="font-mono">ATLAS_AGENT_TOKEN</code> for your agent container. Tokens are only shown
-                once—store it securely now.
-              </p>
-            </div>
-          )}
-
-          <form className="p-4 grid gap-3 md:grid-cols-3" onSubmit={handleGenerateToken}>
-            <label className="md:col-span-2 flex flex-col text-sm font-medium text-gray-700">
-              Label (optional)
-              <input
-                type="text"
-                value={tokenFormLabel}
-                onChange={(e) => setTokenFormLabel(e.target.value)}
-                className="mt-1 rounded border-gray-300 focus:border-blue-500 focus:ring-blue-500"
-                placeholder="edge01 or branch gateway"
-                disabled={!activeSiteId}
-              />
-            </label>
-            <div className="flex items-end">
-              <button
-                type="submit"
-                className="inline-flex items-center justify-center rounded bg-blue-600 px-4 py-2 text-white text-sm font-semibold disabled:opacity-50"
-                disabled={!activeSiteId || tokenStatus.loading}
-              >
-                Generate token
-              </button>
-            </div>
-          </form>
-
-          <div className="px-4 pb-4">
-            <ul className="divide-y rounded border border-gray-200 bg-gray-50 max-h-56 overflow-auto">
-              {tokens.map((token) => (
-                <li key={token.id} className="p-3 flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="font-mono text-xs break-all text-gray-900">{token.masked}</p>
-                    <p className="text-xs text-gray-500">
-                      {token.label || "Agent token"} · Created {formatDate(token.created_at)}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className="text-[11px] text-gray-500">Hidden after creation</span>
-                    <button
-                      type="button"
-                      onClick={() => handleRevokeToken(token.id)}
-                      className="inline-flex items-center rounded border border-red-200 bg-red-50 px-2 py-1 text-[11px] font-semibold text-red-700 hover:bg-red-100"
-                      disabled={tokenStatus.loading}
-                    >
-                      Revoke
-                    </button>
-                  </div>
-                </li>
-              ))}
-              {!tokens.length && (
-                <li className="p-3 text-sm text-gray-500 text-center">
-                  {activeSiteId ? "No tokens yet — generate one to deploy an agent." : "Select a site to manage tokens."}
-                </li>
+              {!activeSiteId && (
+                <p className="text-xs text-gray-500">Select a site above to mint new agent tokens.</p>
               )}
-            </ul>
+            </form>
+
+            <div className="px-4 pb-4 flex-1 flex">
+              <ul className="divide-y rounded border border-gray-200 bg-gray-50 w-full max-h-56 overflow-auto self-start">
+                {tokens.map((token) => (
+                  <li key={token.id} className="p-3 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-mono text-xs break-all text-gray-900">{token.masked}</p>
+                      <p className="text-xs text-gray-500">
+                        {token.label || "Agent token"} · Created {formatDate(token.created_at)}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-[11px] text-gray-500">Hidden after creation</span>
+                      <button
+                        type="button"
+                        onClick={() => handleRevokeToken(token.id)}
+                        className="inline-flex items-center rounded border border-red-200 bg-red-50 px-2 py-1 text-[11px] font-semibold text-red-700 hover:bg-red-100"
+                        disabled={tokenStatus.loading}
+                      >
+                        Revoke
+                      </button>
+                    </div>
+                  </li>
+                ))}
+                {!tokens.length && (
+                  <li className="p-4 text-sm text-gray-500 text-center flex items-center justify-center h-full">
+                    {activeSiteId ? "No tokens yet — generate one to deploy an agent." : "Select a site to manage tokens."}
+                  </li>
+                )}
+              </ul>
+            </div>
           </div>
         </section>
 
@@ -670,8 +637,8 @@ export default function SitesPanel() {
           {detailError && (
             <p className="px-4 pt-3 text-sm text-red-600">{detailError}</p>
           )}
-          <div className="flex-1 overflow-auto">
-            <ul className="divide-y">
+          <div className="flex-1 overflow-auto flex">
+            <ul className="divide-y flex-1 self-start">
               {agents.map((agent) => {
                 const health = describeAgentHealth(agent);
                 const toneClass = health.tone === "green"
@@ -723,7 +690,7 @@ export default function SitesPanel() {
                 );
               })}
               {!agents.length && (
-                <li className="p-4 text-sm text-gray-500">
+                <li className="p-6 text-sm text-gray-500 flex items-center justify-center">
                   {activeSiteId ? "No agents have reported in yet" : "Select a site"}
                 </li>
               )}
