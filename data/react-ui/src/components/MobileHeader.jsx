@@ -6,7 +6,7 @@ export default function MobileHeader({ onOpenMenu, onOpenLogin }) {
       {/* Left: logo + menu */}
       <div className="flex items-center space-x-2">
         {/* Logo placeholder - replace with SVG when available */}
-        <span className="text-2xl" role="img" aria-label="Atlas logo">🌐</span>
+        <span className="text-2xl" role="img" aria-label="VayScan logo">🌐</span>
   {/* App name removed from top bar on request — only logo + hamburger remain */}
 
         {/* Menu (hamburger) button */}
