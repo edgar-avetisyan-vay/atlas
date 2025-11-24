@@ -513,7 +513,10 @@ export default function InventoryPanel() {
   );
   const hiddenCount = hasFilters ? assets.length - filteredAssets.length : 0;
 
-  const summary = useMemo(() => summarizeAssets(assets), [assets]);
+  const summary = useMemo(
+    () => summarizeAssets(filteredAssets),
+    [filteredAssets],
+  );
   const portlessCount = useMemo(
     () =>
       assets.filter((asset) => {
@@ -601,7 +604,7 @@ export default function InventoryPanel() {
   const closeAssetDetails = () => setActiveAsset(null);
 
   return (
-    <div className="h-full min-h-0 flex flex-col gap-4 overflow-hidden">
+    <div className="flex flex-col gap-4">
       <header className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
         <div>
           <h2 className="text-2xl font-semibold text-gray-900">
@@ -641,456 +644,656 @@ export default function InventoryPanel() {
         </div>
       )}
 
-      <section className="flex-1 min-h-0 flex flex-col">
-        <div
-          ref={assetsTableRef}
-          className="flex flex-col flex-1 rounded-lg border border-gray-200 bg-white shadow-sm min-h-0 overflow-hidden"
-        >
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 px-4 py-3">
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900">Assets</h3>
-              <p className="text-sm text-gray-500">
-                Showing {filteredAssets.length ? `${pageRangeLabel}` : 0} of{" "}
-                {filteredAssets.length} assets
-                {selectedSiteId !== ALL_SITES.id &&
-                siteOptions.find((o) => o.id === selectedSiteId)
-                  ? ` at ${siteOptions.find((o) => o.id === selectedSiteId)?.name}`
-                  : ""}
-                {hiddenCount > 0 && (
-                  <span className="ml-2 text-amber-700">
-                    ({hiddenCount} hidden by filters)
-                  </span>
-                )}
-              </p>
-              {bulkStatus && (
-                <p className="mt-1 text-xs text-blue-700">{bulkStatus}</p>
-              )}
-            </div>
 
-            <div className="w-full space-y-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <input
-                  type="text"
-                  placeholder="Search hostname, IP, OS, network"
-                  className="w-64 flex-1 min-w-[180px] rounded border-gray-300 text-sm focus:border-blue-500 focus:ring-blue-500"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                />
-                <select
-                  className="rounded border-gray-300 text-sm focus:border-blue-500 focus:ring-blue-500"
-                  value={selectedSiteId}
-                  onChange={(e) => setSelectedSiteId(e.target.value)}
-                >
-                  {siteOptions.map((option) => (
+      <section className="grid gap-4 xl:grid-cols-3">
+        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <p className="text-xs uppercase tracking-wide text-gray-500">
+                Inventory snapshot
+              </p>
+              <h3 className="text-lg font-semibold text-gray-900">
+                Filtered inventory
+              </h3>
+              <p className="text-sm text-gray-600">
+                Numbers update instantly as you adjust the filters below.
+              </p>
+            </div>
+            {lastUpdated && (
+              <span className="text-xs text-gray-500">
+                Updated {lastUpdated.toLocaleString()}
+              </span>
+            )}
+          </div>
+          <dl className="mt-3 grid gap-3 sm:grid-cols-2">
+            <div className="rounded border border-gray-200 bg-gray-50 p-3">
+              <dt className="text-xs uppercase tracking-wide text-gray-500">
+                Visible assets
+              </dt>
+              <dd className="text-2xl font-bold text-gray-900">
+                {filteredAssets.length}
+              </dd>
+              <p className="text-xs text-gray-600">Shown in the table below.</p>
+            </div>
+            <div className="rounded border border-gray-200 bg-gray-50 p-3">
+              <dt className="text-xs uppercase tracking-wide text-gray-500">
+                Hidden by filters
+              </dt>
+              <dd className="text-2xl font-bold text-gray-900">{hiddenCount}</dd>
+              <p className="text-xs text-gray-600">
+                Assets excluded by the current filters.
+              </p>
+            </div>
+            <div className="rounded border border-gray-200 bg-gray-50 p-3 sm:col-span-2">
+              <dt className="text-xs uppercase tracking-wide text-gray-500">
+                Sites represented
+              </dt>
+              <dd className="text-xl font-semibold text-gray-900">
+                {summary.bySite.size || 0}
+              </dd>
+              <p className="text-xs text-gray-600">
+                Matches the active scope and filters.
+              </p>
+            </div>
+          </dl>
+        </div>
+
+        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm xl:col-span-2">
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <p className="text-xs uppercase tracking-wide text-gray-500">
+                Network snapshot
+              </p>
+              <h3 className="text-lg font-semibold text-gray-900">
+                Current filtered view
+              </h3>
+              <p className="text-sm text-gray-600">
+                Overview aligned with the filters and refreshed with each
+                change.
+              </p>
+            </div>
+            {lastUpdated && (
+              <span className="text-xs text-gray-500">
+                Updated {lastUpdated.toLocaleString()}
+              </span>
+            )}
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 shadow-sm">
+              <p className="text-xs uppercase tracking-wide text-gray-500">
+                Assets
+              </p>
+              <p className="text-3xl font-bold text-gray-900">{summary.total}</p>
+              <p className="text-sm text-gray-500">
+                Across {summary.bySite.size || 1} site(s)
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={showUnknownAssets}
+              className={`text-left rounded-lg border p-3 shadow-sm transition hover:border-gray-300 hover:shadow ${
+                unknownOnly
+                  ? "border-amber-300 bg-amber-50"
+                  : "border-gray-200 bg-white"
+              }`}
+              aria-pressed={unknownOnly}
+            >
+              <p className="text-xs uppercase tracking-wide text-gray-500">
+                Unknown
+              </p>
+              <p className="text-3xl font-bold text-amber-600">
+                {summary.unknown}
+              </p>
+              <p className="text-sm text-gray-500">Missing hostname or OS</p>
+              {unknownOnly && (
+                <p className="mt-1 text-xs text-amber-700">
+                  Filtering unknown assets
+                </p>
+              )}
+            </button>
+            <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 shadow-sm">
+              <p className="text-xs uppercase tracking-wide text-gray-500">
+                Known OS
+              </p>
+              <p className="text-lg font-semibold text-gray-900">
+                {summary.osCounts.windows +
+                  summary.osCounts.linux +
+                  summary.osCounts.mac}
+              </p>
+              <p className="text-xs text-gray-500">
+                Windows · Linux · macOS coverage
+              </p>
+            </div>
+            <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 shadow-sm">
+              <p className="text-xs uppercase tracking-wide text-gray-500">
+                Unknown share
+              </p>
+              <p className="text-lg font-semibold text-gray-900">
+                {summary.total
+                  ? Math.round((summary.unknown / summary.total) * 100)
+                  : 0}
+                %
+              </p>
+              <p className="text-xs text-gray-500">Use filters to reduce gaps</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">Filters</h3>
+            <p className="text-sm text-gray-600">
+              Adjust the scope before scrolling the table.
+            </p>
+          </div>
+          {hasFilters && (
+            <button
+              type="button"
+              className="rounded border border-gray-300 px-3 py-1 text-sm text-gray-700 hover:bg-gray-100"
+              onClick={() => {
+                setQuery("");
+                setStatusFilter("all");
+                setSiteFilter("all");
+                setUnknownOnly(false);
+                setIpFilter("");
+                setSubnetFilter("");
+                setLastSeenFilter("any");
+              }}
+            >
+              Clear filters
+            </button>
+          )}
+        </div>
+
+        <div className="mt-3 space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              type="text"
+              placeholder="Search hostname, IP, OS, network"
+              className="w-64 flex-1 min-w-[180px] rounded border-gray-300 text-sm focus:border-blue-500 focus:ring-blue-500"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            <select
+              className="rounded border-gray-300 text-sm focus:border-blue-500 focus:ring-blue-500"
+              value={selectedSiteId}
+              onChange={(e) => setSelectedSiteId(e.target.value)}
+            >
+              {siteOptions.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.name}
+                </option>
+              ))}
+            </select>
+            {selectedSiteId === ALL_SITES.id && (
+              <select
+                className="rounded border-gray-300 text-sm focus:border-blue-500 focus:ring-blue-500"
+                value={siteFilter}
+                onChange={(e) => setSiteFilter(e.target.value)}
+              >
+                <option value="all">Any site</option>
+                {siteOptions
+                  .filter((o) => o.id !== ALL_SITES.id)
+                  .map((option) => (
                     <option key={option.id} value={option.id}>
                       {option.name}
                     </option>
                   ))}
-                </select>
-                {selectedSiteId === ALL_SITES.id && (
-                  <select
-                    className="rounded border-gray-300 text-sm focus:border-blue-500 focus:ring-blue-500"
-                    value={siteFilter}
-                    onChange={(e) => setSiteFilter(e.target.value)}
-                  >
-                    <option value="all">Any site</option>
-                    {siteOptions
-                      .filter((o) => o.id !== ALL_SITES.id)
-                      .map((option) => (
-                        <option key={option.id} value={option.id}>
-                          {option.name}
-                        </option>
-                      ))}
-                  </select>
-                )}
-                <select
-                  className="rounded border-gray-300 text-sm focus:border-blue-500 focus:ring-blue-500"
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                >
-                  <option value="all">Any status</option>
-                  <option value="online">Online</option>
-                  <option value="offline">Offline</option>
-                  <option value="running">Running</option>
-                  <option value="stopped">Stopped</option>
-                </select>
-                <select
-                  className="rounded border-gray-300 text-sm focus:border-blue-500 focus:ring-blue-500"
-                  value={lastSeenFilter}
-                  onChange={(e) => setLastSeenFilter(e.target.value)}
-                >
-                  <option value="any">Any time</option>
-                  <option value="hour">Last hour</option>
-                  <option value="day">Last 24h</option>
-                  <option value="week">Last 7d</option>
-                  <option value="stale">Older than 24h</option>
-                </select>
+              </select>
+            )}
+            <select
+              className="rounded border-gray-300 text-sm focus:border-blue-500 focus:ring-blue-500"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+            >
+              <option value="all">Any status</option>
+              <option value="online">Online</option>
+              <option value="offline">Offline</option>
+              <option value="running">Running</option>
+              <option value="stopped">Stopped</option>
+            </select>
+            <select
+              className="rounded border-gray-300 text-sm focus:border-blue-500 focus:ring-blue-500"
+              value={lastSeenFilter}
+              onChange={(e) => setLastSeenFilter(e.target.value)}
+            >
+              <option value="any">Any time</option>
+              <option value="hour">Last hour</option>
+              <option value="day">Last 24h</option>
+              <option value="week">Last 7d</option>
+              <option value="stale">Older than 24h</option>
+            </select>
+            <input
+              type="text"
+              value={subnetFilter}
+              onChange={(e) => setSubnetFilter(e.target.value)}
+              className="w-44 rounded border-gray-300 text-sm focus:border-blue-500 focus:ring-blue-500"
+              placeholder="Subnet prefix"
+            />
+            <button
+              type="button"
+              className="rounded border border-gray-300 px-2 py-1 text-sm text-gray-700 hover:bg-gray-100"
+              onClick={() => setAdvancedFiltersOpen((prev) => !prev)}
+              aria-expanded={advancedFiltersOpen}
+            >
+              {advancedFiltersOpen ? "Hide details" : "More filters"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedSiteId((prev) => prev)}
+              className="rounded border border-blue-200 bg-blue-50 px-3 py-1 text-sm font-semibold text-blue-800 hover:bg-blue-100"
+              disabled={loading}
+            >
+              Refresh
+            </button>
+            <label className="ml-auto inline-flex items-center gap-2 text-sm text-gray-700 align-middle">
+              <input
+                type="checkbox"
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                checked={unknownOnly}
+                onChange={(e) => setUnknownOnly(e.target.checked)}
+              />
+              Unknown only
+            </label>
+          </div>
+
+          {advancedFiltersOpen && (
+            <div className="flex flex-wrap items-center gap-2 border-t border-gray-100 pt-2">
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                IP / CIDR / range
                 <input
                   type="text"
-                  value={subnetFilter}
-                  onChange={(e) => setSubnetFilter(e.target.value)}
-                  className="w-44 rounded border-gray-300 text-sm focus:border-blue-500 focus:ring-blue-500"
-                  placeholder="Subnet prefix"
+                  value={ipFilter}
+                  onChange={(e) => setIpFilter(e.target.value)}
+                  className="rounded border-gray-300 text-sm focus:border-blue-500 focus:ring-blue-500"
+                  placeholder="10.0.0.0/24 or 10.0.0.1-10.0.0.20"
                 />
-                <button
-                  type="button"
-                  className="rounded border border-gray-300 px-2 py-1 text-sm text-gray-700 hover:bg-gray-100"
-                  onClick={() => setAdvancedFiltersOpen((prev) => !prev)}
-                  aria-expanded={advancedFiltersOpen}
-                >
-                  {advancedFiltersOpen ? "Hide details" : "More filters"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedSiteId((prev) => prev)}
-                  className="rounded border border-blue-200 bg-blue-50 px-3 py-1 text-sm font-semibold text-blue-800 hover:bg-blue-100"
-                  disabled={loading}
-                >
-                  Refresh
-                </button>
-                <label className="ml-auto inline-flex items-center gap-2 text-sm text-gray-700 align-middle">
+              </label>
+              <select
+                className="rounded border-gray-300 text-sm focus:border-blue-500 focus:ring-blue-500"
+                value={groupBy}
+                onChange={(e) => setGroupBy(e.target.value)}
+              >
+                <option value="none">No grouping</option>
+                <option value="site">Group by site</option>
+                <option value="status">Group by status</option>
+              </select>
+              <select
+                className="rounded border-gray-300 text-sm focus:border-blue-500 focus:ring-blue-500"
+                value={sortConfig.key}
+                onChange={(e) => setSortKey(e.target.value)}
+              >
+                <option value="hostname">Hostname</option>
+                <option value="site">Site</option>
+                <option value="ip">IP</option>
+                <option value="os">OS</option>
+                <option value="network">Network</option>
+                <option value="ports">Ports</option>
+                <option value="status">Status</option>
+                <option value="lastSeen">Last seen</option>
+              </select>
+              <button
+                type="button"
+                className="rounded border border-gray-300 px-2 py-1 text-sm text-gray-700 hover:bg-gray-100"
+                onClick={() =>
+                  setSortConfig((prev) => ({
+                    key: prev.key,
+                    direction: prev.direction === "asc" ? "desc" : "asc",
+                  }))
+                }
+              >
+                {sortConfig.direction === "asc" ? "⬆" : "⬇"}
+              </button>
+              <p className="text-xs text-gray-500">
+                Combine IP, grouping, and sorting without leaving this panel.
+              </p>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section
+        ref={assetsTableRef}
+        className="rounded-lg border border-gray-200 bg-white shadow-sm"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 px-4 py-3">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">Assets</h3>
+            <p className="text-sm text-gray-500">
+              Showing {filteredAssets.length ? `${pageRangeLabel}` : 0} of {" "}
+              {filteredAssets.length} assets
+              {selectedSiteId !== ALL_SITES.id &&
+              siteOptions.find((o) => o.id === selectedSiteId)
+                ? ` at ${siteOptions.find((o) => o.id === selectedSiteId)?.name}`
+                : ""}
+              {hiddenCount > 0 && (
+                <span className="ml-2 text-amber-700">
+                  ({hiddenCount} hidden by filters)
+                </span>
+              )}
+            </p>
+            {bulkStatus && (
+              <p className="mt-1 text-xs text-blue-700">{bulkStatus}</p>
+            )}
+          </div>
+          {lastUpdated && (
+            <div className="text-right text-xs text-gray-500">
+              <p>Inventory refreshed</p>
+              <p className="font-semibold text-gray-700">
+                {lastUpdated.toLocaleString()}
+              </p>
+            </div>
+          )}
+        </div>
+
+        {selectedAssets.length > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 bg-blue-50 px-4 py-2 text-xs text-blue-900">
+            <span className="font-semibold">
+              {selectedAssets.length} selected
+            </span>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="rounded border border-blue-300 bg-white px-3 py-1 hover:bg-blue-100"
+                onClick={handleBulkConfirm}
+              >
+                Mark confirmed
+              </button>
+              <button
+                type="button"
+                className="rounded border border-blue-300 bg-white px-3 py-1 hover:bg-blue-100"
+                onClick={handleBulkUnknown}
+              >
+                Filter unknown
+              </button>
+              <button
+                type="button"
+                className="rounded border border-blue-300 bg-white px-3 py-1 hover:bg-blue-100"
+                onClick={() => setSelectedIds(new Set())}
+              >
+                Clear selection
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-xs">
+            <thead className="bg-gray-50 uppercase text-gray-600 shadow-sm">
+              <tr>
+                <th className="w-8 px-2 py-2 text-left">
                   <input
                     type="checkbox"
                     className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                    checked={unknownOnly}
-                    onChange={(e) => setUnknownOnly(e.target.checked)}
+                    checked={allSelected}
+                    onChange={toggleSelectAll}
+                    aria-label="Select all visible assets"
                   />
-                  Unknown only
-                </label>
-                {hasFilters && (
+                </th>
+                <th
+                  scope="col"
+                  className="px-3 py-2 text-left text-[11px] font-semibold"
+                >
                   <button
                     type="button"
-                    className="rounded border border-gray-300 px-3 py-1 text-sm text-gray-700 hover:bg-gray-100"
-                    onClick={() => {
-                      setQuery("");
-                      setStatusFilter("all");
-                      setSiteFilter("all");
-                      setUnknownOnly(false);
-                      setIpFilter("");
-                      setSubnetFilter("");
-                      setLastSeenFilter("any");
-                    }}
+                    className="flex items-center gap-1"
+                    onClick={() => setSortKey("hostname")}
                   >
-                    Clear filters
+                    Hostname {sortIndicator("hostname")}
                   </button>
-                )}
-              </div>
-
-              {advancedFiltersOpen && (
-                <div className="flex flex-wrap items-center gap-2 border-t border-gray-100 pt-2">
-                  <label className="flex items-center gap-2 text-sm text-gray-700">
-                    IP / CIDR / range
-                    <input
-                      type="text"
-                      value={ipFilter}
-                      onChange={(e) => setIpFilter(e.target.value)}
-                      className="rounded border-gray-300 text-sm focus:border-blue-500 focus:ring-blue-500"
-                      placeholder="10.0.0.0/24 or 10.0.0.1-10.0.0.20"
-                    />
-                  </label>
-                  <select
-                    className="rounded border-gray-300 text-sm focus:border-blue-500 focus:ring-blue-500"
-                    value={groupBy}
-                    onChange={(e) => setGroupBy(e.target.value)}
-                  >
-                    <option value="none">No grouping</option>
-                    <option value="site">Group by site</option>
-                    <option value="status">Group by status</option>
-                  </select>
-                  <select
-                    className="rounded border-gray-300 text-sm focus:border-blue-500 focus:ring-blue-500"
-                    value={sortConfig.key}
-                    onChange={(e) => setSortKey(e.target.value)}
-                  >
-                    <option value="hostname">Hostname</option>
-                    <option value="site">Site</option>
-                    <option value="ip">IP</option>
-                    <option value="os">OS</option>
-                    <option value="network">Network</option>
-                    <option value="ports">Ports</option>
-                    <option value="status">Status</option>
-                    <option value="lastSeen">Last seen</option>
-                  </select>
+                </th>
+                <th
+                  scope="col"
+                  className="px-3 py-2 text-left text-[11px] font-semibold"
+                >
                   <button
                     type="button"
-                    className="rounded border border-gray-300 px-2 py-1 text-sm text-gray-700 hover:bg-gray-100"
-                    onClick={() =>
-                      setSortConfig((prev) => ({
-                        key: prev.key,
-                        direction: prev.direction === "asc" ? "desc" : "asc",
-                      }))
-                    }
+                    className="flex items-center gap-1"
+                    onClick={() => setSortKey("site")}
                   >
-                    {sortConfig.direction === "asc" ? "⬆" : "⬇"}
+                    Site {sortIndicator("site")}
                   </button>
-                  <p className="text-xs text-gray-500">
-                    Combine IP, grouping, and sorting without leaving this
-                    panel.
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
+                </th>
+                <th
+                  scope="col"
+                  className="px-3 py-2 text-left text-[11px] font-semibold"
+                >
+                  <button
+                    type="button"
+                    className="flex items-center gap-1"
+                    onClick={() => setSortKey("ip")}
+                  >
+                    IP {sortIndicator("ip")}
+                  </button>
+                </th>
+                <th
+                  scope="col"
+                  className="px-3 py-2 text-left text-[11px] font-semibold"
+                >
+                  <button
+                    type="button"
+                    className="flex items-center gap-1"
+                    onClick={() => setSortKey("os")}
+                  >
+                    OS {sortIndicator("os")}
+                  </button>
+                </th>
+                <th
+                  scope="col"
+                  className="px-3 py-2 text-left text-[11px] font-semibold"
+                >
+                  <button
+                    type="button"
+                    className="flex items-center gap-1"
+                    onClick={() => setSortKey("network")}
+                  >
+                    Network {sortIndicator("network")}
+                  </button>
+                </th>
+                <th
+                  scope="col"
+                  className="px-3 py-2 text-left text-[11px] font-semibold"
+                >
+                  <button
+                    type="button"
+                    className="flex items-center gap-1"
+                    onClick={() => setSortKey("ports")}
+                  >
+                    Ports {sortIndicator("ports")}
+                  </button>
+                </th>
+                <th
+                  scope="col"
+                  className="px-3 py-2 text-left text-[11px] font-semibold"
+                >
+                  <button
+                    type="button"
+                    className="flex items-center gap-1"
+                    onClick={() => setSortKey("status")}
+                  >
+                    Status {sortIndicator("status")}
+                  </button>
+                </th>
+                <th
+                  scope="col"
+                  className="px-3 py-2 text-left text-[11px] font-semibold"
+                >
+                  <button
+                    type="button"
+                    className="flex items-center gap-1"
+                    onClick={() => setSortKey("lastSeen")}
+                  >
+                    Last seen {sortIndicator("lastSeen")}
+                  </button>
+                </th>
+                <th className="px-3 py-2 text-left text-[11px] font-semibold">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100 bg-white">
+              {groupedAssets.map((asset) => {
+                const statusTone =
+                  asset.status === "online" || asset.status === "running"
+                    ? "bg-green-50 text-green-700"
+                    : asset.status === "offline" || asset.status === "stopped"
+                      ? "bg-gray-100 text-gray-600"
+                      : "bg-amber-50 text-amber-700";
+                const rowId = assetRowId(asset);
+                const portsExpanded = portExpansions[rowId];
+                const extraPorts = Math.max(0, (asset.portList?.length || 0) - 3);
+                const badgeTone = asset.isUnknown
+                  ? "bg-amber-50 text-amber-700 border-amber-200"
+                  : "bg-blue-50 text-blue-700 border-blue-200";
+                const headerTone =
+                  groupBy === "site"
+                    ? "bg-purple-50 text-purple-800"
+                    : groupBy === "status"
+                      ? "bg-sky-50 text-sky-800"
+                      : "bg-gray-50 text-gray-700";
 
-          {selectedAssets.length > 0 && (
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 bg-blue-50 px-4 py-2 text-xs text-blue-900">
-              <span className="font-semibold">
-                {selectedAssets.length} selected
-              </span>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  className="rounded border border-blue-300 bg-white px-3 py-1 hover:bg-blue-100"
-                  onClick={handleBulkConfirm}
-                >
-                  Mark confirmed
-                </button>
-                <button
-                  type="button"
-                  className="rounded border border-blue-300 bg-white px-3 py-1 hover:bg-blue-100"
-                  onClick={handleBulkUnknown}
-                >
-                  Filter unknown
-                </button>
-                <button
-                  type="button"
-                  className="rounded border border-blue-300 bg-white px-3 py-1 hover:bg-blue-100"
-                  onClick={() => setSelectedIds(new Set())}
-                >
-                  Clear selection
-                </button>
-              </div>
-            </div>
-          )}
-
-          <div
-            className="relative flex-1 min-h-0"
-            style={{ maxHeight: "calc(100vh - 360px)" }}
-          >
-            <div className="absolute inset-0 overflow-auto">
-              <table className="min-w-full text-xs">
-                <thead className="sticky top-0 z-10 bg-gray-50 uppercase text-gray-600 shadow-sm">
-                  <tr>
-                    <th className="w-8 px-2 py-2 text-left">
+                return (
+                  <tr
+                    key={rowId}
+                    className={`text-gray-700 hover:bg-gray-50 ${
+                      asset.isUnknown ? "bg-amber-25" : ""
+                    }`}
+                  >
+                    <td className="px-2 py-1">
                       <input
                         type="checkbox"
                         className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                        checked={allSelected}
-                        onChange={toggleSelectAll}
+                        checked={selectedIds.has(rowId)}
+                        onChange={() => toggleSelect(rowId)}
+                        aria-label={`Select ${asset.hostname || asset.ip}`}
                       />
-                    </th>
-                    {[
-                      ["site", "Site"],
-                      ["hostname", "Hostname"],
-                      ["ip", "IP"],
-                      ["os", "OS"],
-                      ["network", "Network"],
-                      ["ports", "Ports"],
-                      ["status", "Status"],
-                      ["lastSeen", "Last seen"],
-                      ["access", "Access"],
-                    ].map(([key, label]) => (
-                      <th key={key} className="px-3 py-2 text-left">
-                        {key === "access" ? (
-                          label
-                        ) : (
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        <div className={`h-8 w-8 rounded-full border ${badgeTone} flex items-center justify-center text-[10px] font-semibold`}>
+                          {(asset.hostname || asset.ip || "?")
+                            .toUpperCase()
+                            .slice(0, 2)}
+                        </div>
+                        <div>
                           <button
                             type="button"
-                            className={`inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-wide ${
-                              sortConfig.key ===
-                              (key === "status" ? "status" : key)
-                                ? "text-blue-700"
-                                : "text-gray-600"
-                            }`}
-                            onClick={() =>
-                              setSortKey(key === "status" ? "status" : key)
-                            }
+                            className="text-left text-sm font-semibold text-gray-900 hover:underline"
+                            onClick={() => handleAssetClick(asset)}
                           >
-                            {label}
-                            <span aria-hidden>
-                              {sortIndicator(key === "status" ? "status" : key)}
-                            </span>
+                            {asset.hostname || "Unknown host"}
+                          </button>
+                          <p className="text-[11px] text-gray-500">
+                            {asset.ip || "—"}
+                          </p>
+                          {groupBy !== "none" && (
+                            <p className={`text-[10px] ${headerTone} inline-flex rounded px-2 py-0.5 font-semibold`}>
+                              {groupBy === "site"
+                                ? asset.siteName || asset.siteId
+                                : asset.status || "Unknown"}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 text-[11px] text-gray-600">
+                      <div className="flex flex-col">
+                        <span className="font-semibold text-gray-800">
+                          {asset.siteName}
+                        </span>
+                        <span className="text-[10px] text-gray-500">
+                          {asset.group === "docker" ? "Docker" : asset.group}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 text-[11px] text-gray-700">
+                      <span className="font-mono">{asset.ip}</span>
+                    </td>
+                    <td className="px-3 py-2 text-[11px] text-gray-700">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-gray-800">
+                        {asset.os}
+                        {asset.isUnknown && (
+                          <span className="text-amber-600" title="Missing hostname or OS">
+                            ⚠
+                          </span>
+                        )}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-[11px] text-gray-700">
+                      <div className="flex flex-col">
+                        <span className="font-semibold text-gray-800">
+                          {asset.network || "—"}
+                        </span>
+                        <span className="text-[10px] text-gray-500">
+                          {asset.interfaceName || "N/A"}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-3 py-1 text-[11px] text-gray-700">
+                      <div className="flex flex-wrap items-center gap-1">
+                        {asset.portList?.slice(0, 3).map((port) => (
+                          <span
+                            key={port}
+                            className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700"
+                          >
+                            {port}
+                          </span>
+                        ))}
+                        {extraPorts > 0 && (
+                          <button
+                            type="button"
+                            className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700 hover:bg-blue-100"
+                            onClick={() => togglePorts(rowId)}
+                            title={asset.portList?.join(", ")}
+                          >
+                            +{extraPorts}
                           </button>
                         )}
-                      </th>
-                    ))}
+                      </div>
+                      {portsExpanded && asset.portList?.length > 0 && (
+                        <div className="mt-1 max-w-xs whitespace-normal rounded border border-gray-200 bg-gray-50 px-2 py-1 text-[11px] text-gray-700">
+                          {asset.portList.join(", ")}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-3 py-1">
+                      <span
+                        className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${statusTone}`}
+                      >
+                        {asset.status || "unknown"}
+                      </span>
+                    </td>
+                    <td
+                      className="px-3 py-1 text-[11px] text-gray-600"
+                      title={asset.lastSeen || "—"}
+                    >
+                      {asset.lastSeen || "—"}
+                    </td>
+                    <td className="px-3 py-1 text-[11px] text-gray-600">
+                      <span className="inline-flex items-center gap-1 rounded border border-dashed border-blue-200 px-2 py-0.5 text-blue-700">
+                        <span className="h-2 w-2 rounded-full bg-blue-400" />
+                        SSH enrichment soon
+                      </span>
+                    </td>
                   </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {groupedAssets.map((row) => {
-                    if (row.type === "group") {
-                      return (
-                        <tr key={`group-${row.label}`} className="bg-gray-50">
-                          <td
-                            colSpan={10}
-                            className="px-3 py-1.5 text-[11px] font-semibold text-gray-700 uppercase tracking-wide"
-                          >
-                            {row.label} · {row.count} assets
-                          </td>
-                        </tr>
-                      );
-                    }
-
-                    const asset = row.asset;
-                    const rowId = assetRowId(asset);
-                    const portsExpanded = Boolean(portExpansions[rowId]);
-                    const acknowledged = acknowledgedIds.has(rowId);
-                    const portPreview = asset.portList?.slice(0, 2) || [];
-                    const extraPorts = Math.max(
-                      (asset.portList?.length || 0) - portPreview.length,
-                      0,
-                    );
-                    const statusValue = (asset.status || "").toLowerCase();
-                    const statusTone = (() => {
-                      if (
-                        ["online", "running", "up"].some((label) =>
-                          statusValue.includes(label),
-                        )
-                      ) {
-                        return "bg-green-100 text-green-800";
-                      }
-                      if (
-                        ["offline", "down", "stopped"].some((label) =>
-                          statusValue.includes(label),
-                        )
-                      ) {
-                        return "bg-red-100 text-red-700";
-                      }
-                      return "bg-gray-200 text-gray-700";
-                    })();
-
-                    return (
-                      <tr
-                        key={rowId}
-                        className={`${asset.isUnknown ? "bg-gray-50" : ""} hover:bg-gray-50`}
-                      >
-                        <td className="px-2 py-1 align-top">
-                          <input
-                            type="checkbox"
-                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                            checked={selectedIds.has(rowId)}
-                            onChange={() => toggleSelect(rowId)}
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                        </td>
-                        <td className="px-3 py-1 text-[11px] font-semibold text-gray-700">
-                          {asset.siteName}
-                        </td>
-                        <td className="px-3 py-1">
-                          <button
-                            type="button"
-                            onClick={() => handleAssetClick(asset)}
-                            className="max-w-[140px] truncate text-left font-medium text-gray-900 hover:text-blue-700 hover:underline"
-                            title={asset.hostname || "Unknown"}
-                          >
-                            {asset.hostname || "Unknown"}
-                          </button>
-                          <div className="flex items-center gap-1 text-[11px] text-gray-500">
-                            <span>{asset.group}</span>
-                            {acknowledged && (
-                              <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-700">
-                                Confirmed
-                              </span>
-                            )}
-                            {asset.isUnknown && (
-                              <span
-                                className="inline-flex items-center rounded-full bg-gray-200 px-2 py-0.5 text-[10px] font-semibold text-gray-800"
-                                title={
-                                  asset.unknownReasons.join("; ") ||
-                                  "Missing hostname or OS"
-                                }
-                              >
-                                Unknown
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td
-                          className="px-3 py-1 font-mono text-[11px]"
-                          title={asset.ip || "—"}
-                        >
-                          {asset.ip || "—"}
-                        </td>
-                        <td
-                          className="max-w-[140px] truncate px-3 py-1 text-gray-800"
-                          title={asset.os}
-                        >
-                          {asset.os}
-                        </td>
-                        <td
-                          className="max-w-[120px] truncate px-3 py-1 text-gray-700"
-                          title={asset.network || "—"}
-                        >
-                          {asset.network || "—"}
-                        </td>
-                        <td className="px-3 py-1 text-gray-700">
-                          <div className="flex flex-wrap items-center gap-1">
-                            {portPreview.length === 0 && (
-                              <span className="text-gray-500">—</span>
-                            )}
-                            {portPreview.map((port) => (
-                              <span
-                                key={port}
-                                className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-semibold text-gray-700"
-                              >
-                                {port}
-                              </span>
-                            ))}
-                            {extraPorts > 0 && (
-                              <button
-                                type="button"
-                                className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700 hover:bg-blue-100"
-                                onClick={() => togglePorts(rowId)}
-                                title={asset.portList?.join(", ")}
-                              >
-                                +{extraPorts}
-                              </button>
-                            )}
-                          </div>
-                          {portsExpanded && asset.portList?.length > 0 && (
-                            <div className="mt-1 max-w-xs whitespace-normal rounded border border-gray-200 bg-gray-50 px-2 py-1 text-[11px] text-gray-700">
-                              {asset.portList.join(", ")}
-                            </div>
-                          )}
-                        </td>
-                        <td className="px-3 py-1">
-                          <span
-                            className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${statusTone}`}
-                          >
-                            {asset.status || "unknown"}
-                          </span>
-                        </td>
-                        <td
-                          className="px-3 py-1 text-[11px] text-gray-600"
-                          title={asset.lastSeen || "—"}
-                        >
-                          {asset.lastSeen || "—"}
-                        </td>
-                        <td className="px-3 py-1 text-[11px] text-gray-600">
-                          <span className="inline-flex items-center gap-1 rounded border border-dashed border-blue-200 px-2 py-0.5 text-blue-700">
-                            <span className="h-2 w-2 rounded-full bg-blue-400" />
-                            SSH enrichment soon
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {!groupedAssets.length && (
-                    <tr>
-                      <td
-                        className="px-3 py-4 text-center text-sm text-gray-500"
-                        colSpan={10}
-                      >
-                        {loading
-                          ? "Loading inventory…"
-                          : "No assets match your filters"}
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
+                );
+              })}
+              {!groupedAssets.length && (
+                <tr>
+                  <td
+                    className="px-3 py-4 text-center text-sm text-gray-500"
+                    colSpan={10}
+                  >
+                    {loading
+                      ? "Loading inventory…"
+                      : "No assets match your filters"}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
 
         <div className="border-t border-gray-100">
@@ -1123,82 +1326,8 @@ export default function InventoryPanel() {
               {filteredAssets.length === 1 ? "" : "s"}
             </div>
           </div>
-          <div className="flex items-center justify-between border-t border-gray-100 px-4 py-2 text-xs text-gray-500">
-            <span>
-              {loading ? "Refreshing inventory…" : "Inventory snapshot"}
-            </span>
-            {lastUpdated && (
-              <span>Updated {lastUpdated.toLocaleTimeString()}</span>
-            )}
-          </div>
         </div>
       </section>
-
-      <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-        <p className="text-xs uppercase tracking-wide text-gray-500 mb-3">
-          Network snapshot
-        </p>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
-            <p className="text-xs uppercase tracking-wide text-gray-500">
-              Assets
-            </p>
-            <p className="text-3xl font-bold text-gray-900">{summary.total}</p>
-            <p className="text-sm text-gray-500">
-              Across {summary.bySite.size || 1} site(s)
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={showUnknownAssets}
-            className={`text-left rounded-lg border p-3 shadow-sm transition hover:border-gray-300 hover:shadow ${
-              unknownOnly
-                ? "border-amber-300 bg-amber-50"
-                : "border-gray-200 bg-white"
-            }`}
-            aria-pressed={unknownOnly}
-          >
-            <p className="text-xs uppercase tracking-wide text-gray-500">
-              Unknown
-            </p>
-            <p className="text-3xl font-bold text-amber-600">
-              {summary.unknown}
-            </p>
-            <p className="text-sm text-gray-500">Missing hostname or OS</p>
-            {unknownOnly && (
-              <p className="mt-1 text-xs text-amber-700">
-                Filtering unknown assets
-              </p>
-            )}
-          </button>
-          <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
-            <p className="text-xs uppercase tracking-wide text-gray-500">
-              Known OS
-            </p>
-            <p className="text-lg font-semibold text-gray-900">
-              {summary.osCounts.windows +
-                summary.osCounts.linux +
-                summary.osCounts.mac}
-            </p>
-            <p className="text-xs text-gray-500">
-              Windows · Linux · macOS coverage
-            </p>
-          </div>
-          <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
-            <p className="text-xs uppercase tracking-wide text-gray-500">
-              Unknown share
-            </p>
-            <p className="text-lg font-semibold text-gray-900">
-              {summary.total
-                ? Math.round((summary.unknown / summary.total) * 100)
-                : 0}
-              %
-            </p>
-            <p className="text-xs text-gray-500">Use filters to reduce gaps</p>
-          </div>
-        </div>
-      </section>
-
       {activeAsset && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
