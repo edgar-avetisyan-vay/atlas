@@ -244,7 +244,11 @@ export default function App() {
           )}
 
           {/* Content area fills remaining height; individual tabs handle their own internal scroll */}
-          <div className="w-full h-full flex-1 min-h-0">
+          <div
+            className={`w-full h-full flex-1 min-h-0 ${
+              activeTab === "Inventory" ? "overflow-y-auto pr-1" : ""
+            }`}
+          >
             {activeTab === "Inventory" && (
               <NetworkStatsBar
                 onShowDuplicates={() => {
